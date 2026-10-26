@@ -10,7 +10,7 @@ class PlanSeeder extends Seeder
     public function run(): void
     {
         $rintis = ['stock_management', 'promo'];
-        $tumbuh = array_merge($rintis, ['realtime', 'multi_outlet', 'offline_mode', 'advanced_report', 'printer', 'custom_receipt']);
+        $tumbuh = array_merge($rintis, ['wholesale', 'realtime', 'multi_outlet', 'offline_mode', 'advanced_report', 'printer', 'custom_receipt']);
         $sultan = array_merge($tumbuh, ['loyalty', 'receivable', 'custom_roles', 'audit_log', 'integrations', 'white_label']);
 
         $plans = [

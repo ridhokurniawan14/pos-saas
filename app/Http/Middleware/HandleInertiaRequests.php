@@ -57,6 +57,7 @@ class HandleInertiaRequests extends Middleware
                     'status' => $b->status,
                     'plan' => ['code' => $plan?->code, 'name' => $plan?->name],
                     'days_left' => $b->daysLeft(),
+                    'ends_at' => $b->subscription?->ends_at?->toDateString(),
                     'read_only' => $b->isReadOnly(),
                     'features' => $plan?->features()->where('enabled', true)->pluck('feature_key'),
                     'limits' => $plan?->limits()->pluck('value', 'key'),

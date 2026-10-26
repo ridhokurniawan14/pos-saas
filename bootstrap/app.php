@@ -32,6 +32,10 @@ return Application::configure(basePath: dirname(__DIR__))
             fn(Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
         $exceptions->respond(function (Response $response, Throwable $e, Request $request) {
+            if ($request->expectsJson()) {
+                return $response;
+            }
+
             $status = $response->getStatusCode();
 
             if (in_array($status, [403, 404])) {
