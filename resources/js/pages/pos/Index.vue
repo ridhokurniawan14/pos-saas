@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import MoneyInput from '@/components/MoneyInput.vue';
 
 type Unit = { name: string; conversion: number; sell_price: number };
 type Tier = { unit_name: string | null; min_qty: number; price: number };
@@ -9,12 +11,15 @@ type Product = {
     sell_price: number; category_id: string | null; image_url: string | null; units: Unit[]; tiers: Tier[];
 };
 type Line = { product: Product; unit_name: string; qty: number };
+type Bank = { id: string; bank_name: string; account_number: string; account_name: string };
+type PayMethod = { key: string; label: string; image_url?: string; banks?: Bank[] };
 
 const props = defineProps<{
     business_name: string;
     outlets: { id: string; name: string }[];
     categories: { id: string; name: string }[];
     products: Product[];
+    payment_methods: PayMethod[];
 }>();
 
 const page = usePage<any>();
@@ -38,16 +43,30 @@ const outletId = ref(props.outlets[0]?.id ?? '');
 const search = ref('');
 const categoryId = ref<string | null>(null);
 const cart = ref<Line[]>([]);
-const discount = ref<number>(0);
+const discountType = ref<'rp' | 'percent'>('rp');
+const discountValue = ref<number | null>(null);
+
+const setDiscountType = (t: 'rp' | 'percent') => {
+    discountType.value = t;
+    discountValue.value = null;
+};
+
+watch(discountValue, (v) => {
+    if (discountType.value === 'percent' && v && v > 100) discountValue.value = 100;
+});
 const searchEl = ref<HTMLInputElement | null>(null);
+const cartOpen = ref(false);
+const confirmClear = ref(false);
 
 const payOpen = ref(false);
-const method = ref<'cash' | 'qris' | 'debit' | 'transfer'>('cash');
+const method = ref('');
+const bankId = ref('');
 const cashInput = ref<number | null>(null);
 const processing = ref(false);
 const error = ref('');
 const orderId = ref(uuid());
 const receipt = ref<any>(null);
+const copied = ref('');
 
 onMounted(() => searchEl.value?.focus());
 
@@ -72,7 +91,11 @@ const priceOf = (l: Line) => {
 const lineTotal = (l: Line) => priceOf(l) * l.qty;
 
 const subtotal = computed(() => cart.value.reduce((s, l) => s + lineTotal(l), 0));
-const discountApplied = computed(() => Math.min(Math.max(discount.value || 0, 0), subtotal.value));
+const discountApplied = computed(() => {
+    const v = discountValue.value || 0;
+    const raw = discountType.value === 'percent' ? Math.round((subtotal.value * Math.min(v, 100)) / 100) : v;
+    return Math.min(Math.max(raw, 0), subtotal.value);
+});
 const total = computed(() => subtotal.value - discountApplied.value);
 const itemCount = computed(() => cart.value.reduce((s, l) => s + l.qty, 0));
 
@@ -89,11 +112,14 @@ const dec = (i: number) => {
 const setQty = (i: number, v: number) => {
     cart.value[i].qty = Math.max(1, Math.floor(Number(v) || 1));
 };
-const clearCart = () => {
-    if (cart.value.length && confirm('Kosongkan keranjang?')) {
-        cart.value = [];
-        discount.value = 0;
-    }
+const askClear = () => {
+    if (cart.value.length) confirmClear.value = true;
+};
+const doClear = () => {
+    cart.value = [];
+    discountValue.value = null;
+    confirmClear.value = false;
+    cartOpen.value = false;
 };
 
 // Scanner mengirim Enter otomatis: barcode/SKU persis atau hanya 1 hasil -> langsung masuk keranjang
@@ -109,21 +135,46 @@ const onEnter = () => {
 };
 
 /* ---------- pembayaran ---------- */
+const currentMethod = computed(() => props.payment_methods.find((m) => m.key === method.value));
 const paid = computed(() => (method.value === 'cash' ? cashInput.value || 0 : total.value));
 const change = computed(() => paid.value - total.value);
-const canPay = computed(() => total.value > 0 && paid.value >= total.value && !readOnly.value);
+const canPay = computed(
+    () =>
+        total.value > 0 &&
+        !!method.value &&
+        paid.value >= total.value &&
+        !readOnly.value &&
+        (method.value !== 'transfer' || !!bankId.value),
+);
+
+const DENOMS = [5000, 10000, 20000, 50000, 75000, 100000];
 const quick = computed(() => {
     const t = total.value;
-    const set = new Set<number>([t]);
-    [10000, 50000, 100000].forEach((s) => set.add(Math.ceil(t / s) * s));
-    return [...set].sort((a, b) => a - b).slice(0, 4);
+    const extra = [Math.ceil(t / 50000) * 50000, Math.ceil(t / 100000) * 100000].filter(
+        (v) => v > t && !DENOMS.includes(v),
+    );
+    const nominals = [...new Set([...DENOMS, ...extra])].sort((a, b) => a - b);
+    return [{ label: 'Uang pas', value: t, enabled: t > 0 }, ...nominals.map((v) => ({ label: rupiah(v), value: v, enabled: v >= t }))];
+});
+
+watch(method, (m) => {
+    if (m === 'transfer') bankId.value = currentMethod.value?.banks?.[0]?.id ?? '';
+    error.value = '';
 });
 
 const openPay = () => {
     error.value = '';
-    method.value = 'cash';
     cashInput.value = null;
+    method.value = props.payment_methods[0]?.key ?? '';
     payOpen.value = true;
+};
+
+const copy = async (text: string) => {
+    try {
+        await navigator.clipboard.writeText(text);
+        copied.value = text;
+        setTimeout(() => (copied.value = ''), 1500);
+    } catch { /* abaikan */ }
 };
 
 const checkout = async () => {
@@ -144,21 +195,29 @@ const checkout = async () => {
                 id: orderId.value,
                 outlet_id: outletId.value,
                 created_at_client: new Date().toISOString(),
-                discount: discountApplied.value,
+                discount_type: discountType.value,
+                discount_value: discountValue.value || 0,
                 items: cart.value.map((l) => ({
                     product_id: l.product.id,
                     unit_name: l.unit_name || null,
                     qty: l.qty,
                 })),
-                payments: [{ method: method.value, amount: paid.value }],
+                payments: [
+                    {
+                        method: method.value,
+                        amount: paid.value,
+                        bank_account_id: method.value === 'transfer' ? bankId.value : null,
+                    },
+                ],
             }),
         });
 
         if (res.ok) {
             receipt.value = await res.json();
             cart.value = [];
-            discount.value = 0;
+            discountValue.value = null;
             payOpen.value = false;
+            cartOpen.value = false;
             orderId.value = uuid();
             return;
         }
@@ -184,244 +243,389 @@ const closeReceipt = () => {
 const printReceipt = () => window.print();
 
 const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit: 'Debit', transfer: 'Transfer' };
-
-const field =
-    'rounded-lg border bg-transparent px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:[color-scheme:dark]';
 </script>
 
 <template>
     <Head title="Kasir" />
 
-    <div class="flex h-svh flex-col bg-neutral-100 dark:bg-neutral-950">
+    <div class="pos">
         <!-- Header -->
-        <header class="flex items-center justify-between gap-3 border-b bg-white px-4 py-2.5 dark:border-neutral-800 dark:bg-neutral-900">
-            <div class="flex items-center gap-3">
-                <Link href="/dashboard" class="rounded-lg border px-3 py-1.5 text-sm dark:border-neutral-700">← Keluar</Link>
+        <header class="pos-header">
+            <div class="pos-row">
+                <Link href="/dashboard" class="pos-btn">← Keluar</Link>
                 <div>
-                    <p class="text-sm font-semibold leading-tight">{{ business_name }}</p>
-                    <p class="text-xs text-neutral-500">Kasir</p>
+                    <div class="pos-bold">{{ business_name }}</div>
+                    <div class="pos-muted pos-xs">Kasir</div>
                 </div>
             </div>
-            <select v-if="outlets.length > 1" v-model="outletId" :class="field" class="!py-1.5">
+            <select v-if="outlets.length > 1" v-model="outletId" class="pos-input pos-auto">
                 <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
             </select>
         </header>
 
-        <p v-if="readOnly" class="bg-red-500/10 px-4 py-2 text-center text-sm text-red-600">
+        <div v-if="readOnly" class="pos-alert">
             Masa trial/langganan habis. Transaksi baru dinonaktifkan. Upgrade paket untuk melanjutkan.
-        </p>
+        </div>
 
-        <div class="grid min-h-0 flex-1 grid-rows-[1fr_auto] md:grid-cols-[1fr_380px] md:grid-rows-1">
+        <div class="pos-body">
             <!-- Katalog -->
-            <section class="flex min-h-0 flex-col gap-3 p-3">
+            <section class="pos-catalog">
                 <input
                     ref="searchEl"
                     v-model="search"
                     @keyup.enter="onEnter"
                     type="search"
                     placeholder="Cari produk, atau scan barcode"
-                    :class="field"
-                    class="w-full bg-white dark:bg-neutral-900"
+                    class="pos-input"
                 />
 
-                <div class="flex gap-2 overflow-x-auto pb-1">
-                    <button
-                        class="shrink-0 rounded-full border px-4 py-1.5 text-sm dark:border-neutral-700"
-                        :class="!categoryId ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-white dark:bg-neutral-900'"
-                        @click="categoryId = null"
-                    >Semua</button>
-                    <button
-                        v-for="c in categories"
-                        :key="c.id"
-                        class="shrink-0 rounded-full border px-4 py-1.5 text-sm dark:border-neutral-700"
-                        :class="categoryId === c.id ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-white dark:bg-neutral-900'"
-                        @click="categoryId = c.id"
-                    >{{ c.name }}</button>
+                <div class="pos-cats">
+                    <button class="pos-chip" :class="{ on: !categoryId }" @click="categoryId = null">Semua</button>
+                    <button v-for="c in categories" :key="c.id" class="pos-chip" :class="{ on: categoryId === c.id }" @click="categoryId = c.id">
+                        {{ c.name }}
+                    </button>
                 </div>
 
-                <div class="grid min-h-0 flex-1 auto-rows-min grid-cols-2 content-start gap-3 overflow-y-auto sm:grid-cols-3 xl:grid-cols-5">
-                    <button
-                        v-for="p in filtered"
-                        :key="p.id"
-                        class="overflow-hidden rounded-xl border bg-white text-left shadow-sm transition hover:border-neutral-400 active:scale-[0.97] dark:border-neutral-800 dark:bg-neutral-900"
-                        @click="add(p)"
-                    >
-                        <div class="aspect-square w-full bg-neutral-100 dark:bg-neutral-800">
-                            <img v-if="p.image_url" :src="p.image_url" :alt="p.name" loading="lazy" class="h-full w-full object-cover" />
-                            <div v-else class="flex h-full w-full items-center justify-center text-4xl font-bold text-neutral-300 dark:text-neutral-600">
-                                {{ p.name.charAt(0).toUpperCase() }}
-                            </div>
+                <div class="pos-grid">
+                    <button v-for="p in filtered" :key="p.id" class="pos-card" @click="add(p)">
+                        <div class="pos-thumb">
+                            <img v-if="p.image_url" :src="p.image_url" :alt="p.name" loading="lazy" />
+                            <span v-else>{{ p.name.charAt(0).toUpperCase() }}</span>
                         </div>
-                        <div class="p-3">
-                            <p class="line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-tight">{{ p.name }}</p>
-                            <p class="mt-1 text-sm font-bold">{{ rupiah(p.sell_price) }}</p>
-                            <p v-if="p.units.length" class="mt-0.5 truncate text-xs text-neutral-500">
-                                + {{ p.units.map((u) => u.name).join(', ') }}
-                            </p>
+                        <div class="pos-card-body">
+                            <div class="pos-name">{{ p.name }}</div>
+                            <div class="pos-bold pos-price">{{ rupiah(p.sell_price) }}</div>
+                            <div v-if="p.units.length" class="pos-muted pos-xs pos-ellipsis">+ {{ p.units.map((u) => u.name).join(', ') }}</div>
                         </div>
                     </button>
-                    <p v-if="!filtered.length" class="col-span-full py-10 text-center text-sm text-neutral-500">
-                        Produk tidak ditemukan.
-                    </p>
+                    <p v-if="!filtered.length" class="pos-empty pos-span">Produk tidak ditemukan.</p>
                 </div>
             </section>
 
             <!-- Keranjang -->
-            <aside class="flex max-h-[55svh] min-h-0 flex-col border-t bg-white md:max-h-none md:border-l md:border-t-0 dark:border-neutral-800 dark:bg-neutral-900">
-                <div class="flex items-center justify-between px-4 py-3">
-                    <h2 class="font-semibold">Keranjang <span class="text-sm font-normal text-neutral-500">({{ itemCount }})</span></h2>
-                    <button class="text-sm text-red-500" @click="clearCart">Kosongkan</button>
+            <aside class="pos-cart" :class="{ open: cartOpen }">
+                <div class="pos-cart-head">
+                    <div class="pos-bold">Keranjang <span class="pos-muted pos-normal">({{ itemCount }})</span></div>
+                    <div class="pos-row">
+                        <button class="pos-link pos-danger-text" @click="askClear">Kosongkan</button>
+                        <button class="pos-btn pos-mobile-only" @click="cartOpen = false">Tutup</button>
+                    </div>
                 </div>
 
-                <div class="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-3">
-                    <div v-for="(l, i) in cart" :key="i" class="rounded-xl border p-3 dark:border-neutral-800">
-                        <div class="flex gap-3">
-                            <div class="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-neutral-100 dark:bg-neutral-800">
-                                <img v-if="l.product.image_url" :src="l.product.image_url" class="h-full w-full object-cover" />
-                                <div v-else class="flex h-full w-full items-center justify-center font-bold text-neutral-400">
-                                    {{ l.product.name.charAt(0).toUpperCase() }}
-                                </div>
+                <div class="pos-lines">
+                    <div v-for="(l, i) in cart" :key="i" class="pos-line">
+                        <div class="pos-row pos-top">
+                            <div class="pos-mini">
+                                <img v-if="l.product.image_url" :src="l.product.image_url" alt="" />
+                                <span v-else>{{ l.product.name.charAt(0).toUpperCase() }}</span>
                             </div>
-                            <div class="min-w-0 flex-1">
-                                <div class="flex items-start justify-between gap-2">
-                                    <p class="text-sm font-medium leading-tight">{{ l.product.name }}</p>
-                                    <p class="shrink-0 text-sm font-semibold">{{ rupiah(lineTotal(l)) }}</p>
+                            <div class="pos-grow">
+                                <div class="pos-between">
+                                    <span class="pos-medium">{{ l.product.name }}</span>
+                                    <span class="pos-bold">{{ rupiah(lineTotal(l)) }}</span>
                                 </div>
-                                <p class="text-xs text-neutral-500">{{ rupiah(priceOf(l)) }} / {{ l.unit_name || l.product.unit }}</p>
+                                <div class="pos-muted pos-xs">{{ rupiah(priceOf(l)) }} / {{ l.unit_name || l.product.unit }}</div>
                             </div>
                         </div>
-
-                        <div class="mt-2 flex items-center gap-2">
-                            <button class="h-9 w-9 rounded-lg border text-lg dark:border-neutral-700" @click="dec(i)">−</button>
-                            <input
-                                :value="l.qty"
-                                @change="setQty(i, +($event.target as HTMLInputElement).value)"
-                                type="number" min="1"
-                                class="h-9 w-16 rounded-lg border bg-transparent text-center text-sm dark:border-neutral-700"
-                            />
-                            <button class="h-9 w-9 rounded-lg border text-lg dark:border-neutral-700" @click="l.qty++">+</button>
-
-                            <select v-if="l.product.units.length" v-model="l.unit_name" :class="field" class="!ml-auto !py-1.5">
+                        <div class="pos-row pos-mt">
+                            <button class="pos-sq" @click="dec(i)">−</button>
+                            <input :value="l.qty" @change="setQty(i, +($event.target as HTMLInputElement).value)" type="number" min="1" class="pos-qty" />
+                            <button class="pos-sq" @click="l.qty++">+</button>
+                            <select v-if="l.product.units.length" v-model="l.unit_name" class="pos-input pos-auto pos-ml">
                                 <option value="">{{ l.product.unit }}</option>
                                 <option v-for="u in l.product.units" :key="u.name" :value="u.name">{{ u.name }}</option>
                             </select>
                         </div>
                     </div>
-                    <p v-if="!cart.length" class="py-12 text-center text-sm text-neutral-500">Pilih produk untuk memulai.</p>
+                    <p v-if="!cart.length" class="pos-empty">Pilih produk untuk memulai.</p>
                 </div>
 
-                <div class="space-y-3 border-t p-4 dark:border-neutral-800">
-                    <div class="flex items-center justify-between text-sm">
-                        <span class="text-neutral-500">Subtotal</span><span>{{ rupiah(subtotal) }}</span>
+                <div class="pos-summary">
+                    <div class="pos-between"><span class="pos-muted">Subtotal</span><span>{{ rupiah(subtotal) }}</span></div>
+                    <div class="pos-between">
+                        <span class="pos-muted">Diskon</span>
+                        <div class="pos-row">
+                            <div class="pos-seg">
+                                <button type="button" :class="{ on: discountType === 'rp' }" @click="setDiscountType('rp')">Rp</button>
+                                <button type="button" :class="{ on: discountType === 'percent' }" @click="setDiscountType('percent')">%</button>
+                            </div>
+                            <MoneyInput v-if="discountType === 'rp'" v-model="discountValue" placeholder="0" class="pos-input pos-disc" />
+                            <input v-else v-model.number="discountValue" type="number" min="0" max="100" placeholder="0" class="pos-input pos-disc" />
+                        </div>
                     </div>
-                    <div class="flex items-center justify-between gap-3 text-sm">
-                        <span class="text-neutral-500">Diskon (Rp)</span>
-                        <input v-model.number="discount" type="number" min="0" :class="field" class="!w-32 !py-1.5 text-right" />
+                    <div v-if="discountType === 'percent' && discountApplied" class="pos-between pos-xs pos-muted">
+                        <span>Potongan</span><span>-{{ rupiah(discountApplied) }}</span>
                     </div>
-                    <div class="flex items-center justify-between text-lg font-bold">
-                        <span>Total</span><span>{{ rupiah(total) }}</span>
-                    </div>
-                    <button
-                        :disabled="!cart.length || readOnly"
-                        class="w-full rounded-xl bg-black py-3.5 text-base font-semibold text-white disabled:opacity-40 dark:bg-white dark:text-black"
-                        @click="openPay"
-                    >Bayar</button>
+                    <div class="pos-between pos-total"><span>Total</span><span>{{ rupiah(total) }}</span></div>
+                    <button class="pos-primary" :disabled="!cart.length || readOnly" @click="openPay">Bayar</button>
                 </div>
             </aside>
         </div>
-    </div>
 
-    <!-- Modal bayar -->
-    <div v-if="payOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" @click.self="payOpen = false">
-        <div class="w-full max-w-md space-y-4 rounded-2xl border bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900">
-            <div class="text-center">
-                <p class="text-sm text-neutral-500">Total bayar</p>
-                <p class="text-3xl font-bold">{{ rupiah(total) }}</p>
-            </div>
+        <!-- Bar bawah (HP / tablet kecil) -->
+        <button class="pos-mbar" @click="cartOpen = true">
+            <span>🛒 {{ itemCount }} item</span>
+            <span class="pos-bold">{{ rupiah(total) }} · Lihat keranjang</span>
+        </button>
 
-            <div class="grid grid-cols-4 gap-2 text-sm">
-                <button
-                    v-for="(label, key) in methodLabel" :key="key"
-                    class="rounded-lg border py-2 dark:border-neutral-700"
-                    :class="method === key ? 'bg-black text-white dark:bg-white dark:text-black' : ''"
-                    @click="method = key as any"
-                >{{ label }}</button>
-            </div>
-
-            <div v-if="method === 'cash'" class="space-y-3">
-                <input v-model.number="cashInput" type="number" min="0" placeholder="Uang diterima" :class="field" class="w-full text-lg" autofocus />
-                <div class="flex flex-wrap gap-2">
-                    <button v-for="q in quick" :key="q" class="rounded-lg border px-3 py-1.5 text-sm dark:border-neutral-700" @click="cashInput = q">
-                        {{ q === total ? 'Uang pas' : rupiah(q) }}
-                    </button>
+        <!-- Modal bayar -->
+        <div v-if="payOpen" class="pos-overlay" @click.self="payOpen = false">
+            <div class="pos-modal">
+                <div class="pos-center">
+                    <div class="pos-muted">Total bayar</div>
+                    <div class="pos-big">{{ rupiah(total) }}</div>
                 </div>
-                <div class="flex items-center justify-between text-lg">
-                    <span class="text-neutral-500">Kembalian</span>
-                    <span class="font-bold" :class="change < 0 ? 'text-red-500' : 'text-green-600'">{{ rupiah(Math.max(change, 0)) }}</span>
+
+                <div v-if="!payment_methods.length" class="pos-notice">
+                    Belum ada metode pembayaran aktif.
+                    <Link href="/payment-settings" class="pos-underline">Atur di menu Pembayaran</Link>
                 </div>
-            </div>
-            <p v-else class="text-center text-sm text-neutral-500">
-                Pastikan pembayaran {{ methodLabel[method] }} sebesar {{ rupiah(total) }} sudah diterima.
-            </p>
 
-            <p v-if="error" class="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-600">{{ error }}</p>
-
-            <div class="flex gap-3">
-                <button
-                    :disabled="!canPay || processing"
-                    class="flex-1 rounded-xl bg-black py-3 font-semibold text-white disabled:opacity-40 dark:bg-white dark:text-black"
-                    @click="checkout"
-                >{{ processing ? 'Menyimpan...' : 'Selesaikan' }}</button>
-                <button class="rounded-xl border px-5 py-3 dark:border-neutral-700" @click="payOpen = false">Batal</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Struk -->
-    <div v-if="receipt" class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4" @click.self="closeReceipt">
-        <div class="w-full max-w-sm space-y-4">
-            <div id="receipt" class="mx-auto w-[302px] bg-white p-3 font-mono text-[12px] leading-snug text-black">
-                <div class="text-center">
-                    <p class="text-sm font-bold">{{ receipt.business }}</p>
-                    <p>{{ receipt.outlet.name }}</p>
-                    <p v-if="receipt.outlet.address">{{ receipt.outlet.address }}</p>
-                    <p v-if="receipt.outlet.phone">{{ receipt.outlet.phone }}</p>
-                </div>
-                <hr class="my-2 border-dashed border-black" />
-                <p>{{ receipt.order.number }}</p>
-                <p>{{ receipt.order.date }} · {{ receipt.cashier }}</p>
-                <hr class="my-2 border-dashed border-black" />
-                <div v-for="(it, i) in receipt.order.items" :key="i" class="mb-1">
-                    <p>{{ it.name }}</p>
-                    <div class="flex justify-between">
-                        <span>{{ it.qty }} {{ it.unit || '' }} x {{ rupiah(it.price) }}</span>
-                        <span>{{ rupiah(it.subtotal) }}</span>
+                <template v-else>
+                    <div class="pos-tabs">
+                        <button v-for="m in payment_methods" :key="m.key" class="pos-chip" :class="{ on: method === m.key }" @click="method = m.key">
+                            {{ m.label }}
+                        </button>
                     </div>
-                </div>
-                <hr class="my-2 border-dashed border-black" />
-                <div class="flex justify-between"><span>Subtotal</span><span>{{ rupiah(receipt.order.subtotal) }}</span></div>
-                <div v-if="receipt.order.discount" class="flex justify-between"><span>Diskon</span><span>-{{ rupiah(receipt.order.discount) }}</span></div>
-                <div class="flex justify-between text-sm font-bold"><span>TOTAL</span><span>{{ rupiah(receipt.order.total) }}</span></div>
-                <div v-for="(p, i) in receipt.order.payments" :key="i" class="flex justify-between">
-                    <span>{{ methodLabel[p.method] }}</span><span>{{ rupiah(p.amount) }}</span>
-                </div>
-                <div class="flex justify-between"><span>Kembali</span><span>{{ rupiah(receipt.order.change) }}</span></div>
-                <hr class="my-2 border-dashed border-black" />
-                <p class="text-center">{{ receipt.outlet.footer || 'Terima kasih atas kunjungan Anda' }}</p>
-            </div>
 
-            <div class="flex justify-center gap-3">
-                <button class="rounded-xl bg-white px-6 py-3 font-semibold text-black" @click="printReceipt">Cetak Struk</button>
-                <button class="rounded-xl border border-white/40 px-6 py-3 font-semibold text-white" @click="closeReceipt">Transaksi Baru</button>
+                    <!-- Tunai -->
+                    <div v-if="method === 'cash'" class="pos-stack">
+                        <MoneyInput v-model="cashInput" placeholder="Uang diterima" class="pos-input pos-lg" autofocus />
+                        <div class="pos-quick">
+                            <button v-for="q in quick" :key="q.label" class="pos-chip" :disabled="!q.enabled" @click="cashInput = q.value">
+                                {{ q.label }}
+                            </button>
+                        </div>
+                        <div class="pos-between pos-lg">
+                            <span class="pos-muted">Kembalian</span>
+                            <span class="pos-bold" :class="change < 0 ? 'pos-danger-text' : 'pos-ok-text'">{{ rupiah(Math.max(change, 0)) }}</span>
+                        </div>
+                    </div>
+
+                    <!-- QRIS -->
+                    <div v-else-if="method === 'qris'" class="pos-center pos-stack">
+                        <img :src="currentMethod?.image_url" alt="QRIS" class="pos-qris" />
+                        <div class="pos-muted">Minta pelanggan scan, pastikan {{ rupiah(total) }} sudah masuk.</div>
+                    </div>
+
+                    <!-- Transfer -->
+                    <div v-else-if="method === 'transfer'" class="pos-stack">
+                        <label v-for="b in currentMethod?.banks" :key="b.id" class="pos-bank" :class="{ on: bankId === b.id }">
+                            <input v-model="bankId" type="radio" :value="b.id" />
+                            <div class="pos-grow">
+                                <div class="pos-medium">{{ b.bank_name }}</div>
+                                <div class="pos-bold pos-mono">{{ b.account_number }}</div>
+                                <div class="pos-muted pos-xs">a.n. {{ b.account_name }}</div>
+                            </div>
+                            <button type="button" class="pos-btn" @click.prevent="copy(b.account_number)">
+                                {{ copied === b.account_number ? 'Tersalin' : 'Salin' }}
+                            </button>
+                        </label>
+                        <div class="pos-muted pos-center">Pastikan transfer {{ rupiah(total) }} sudah masuk.</div>
+                    </div>
+
+                    <!-- Debit -->
+                    <div v-else class="pos-muted pos-center">
+                        Proses {{ rupiah(total) }} di mesin EDC, lalu klik Selesaikan.
+                    </div>
+                </template>
+
+                <p v-if="error" class="pos-error">{{ error }}</p>
+
+                <div class="pos-row">
+                    <button class="pos-primary pos-grow" :disabled="!canPay || processing" @click="checkout">
+                        {{ processing ? 'Menyimpan...' : 'Selesaikan' }}
+                    </button>
+                    <button class="pos-btn pos-btn-lg" @click="payOpen = false">Batal</button>
+                </div>
             </div>
         </div>
+
+        <!-- Struk -->
+        <div v-if="receipt" class="pos-overlay" @click.self="closeReceipt">
+            <div class="pos-stack pos-receipt-wrap">
+                <div id="receipt" class="pos-receipt">
+                    <div class="rc-center">
+                        <div class="rc-bold">{{ receipt.business }}</div>
+                        <div>{{ receipt.outlet.name }}</div>
+                        <div v-if="receipt.outlet.address">{{ receipt.outlet.address }}</div>
+                        <div v-if="receipt.outlet.phone">{{ receipt.outlet.phone }}</div>
+                    </div>
+                    <hr class="rc-hr" />
+                    <div>{{ receipt.order.number }}</div>
+                    <div>{{ receipt.order.date }} · {{ receipt.cashier }}</div>
+                    <hr class="rc-hr" />
+                    <div v-for="(it, i) in receipt.order.items" :key="i" class="rc-item">
+                        <div>{{ it.name }}</div>
+                        <div class="rc-row">
+                            <span>{{ it.qty }} {{ it.unit || '' }} x {{ rupiah(it.price) }}</span>
+                            <span>{{ rupiah(it.subtotal) }}</span>
+                        </div>
+                    </div>
+                    <hr class="rc-hr" />
+                    <div class="rc-row"><span>Subtotal</span><span>{{ rupiah(receipt.order.subtotal) }}</span></div>
+                    <div v-if="receipt.order.discount" class="rc-row"><span>Diskon</span><span>-{{ rupiah(receipt.order.discount) }}</span></div>
+                    <div class="rc-row rc-bold"><span>TOTAL</span><span>{{ rupiah(receipt.order.total) }}</span></div>
+                    <div v-for="(p, i) in receipt.order.payments" :key="i" class="rc-row">
+                        <span>{{ methodLabel[p.method] }}</span><span>{{ rupiah(p.amount) }}</span>
+                    </div>
+                    <div class="rc-row"><span>Kembali</span><span>{{ rupiah(receipt.order.change) }}</span></div>
+                    <hr class="rc-hr" />
+                    <div class="rc-center">{{ receipt.outlet.footer || 'Terima kasih atas kunjungan Anda' }}</div>
+                </div>
+
+                <div class="pos-row pos-justify">
+                    <button class="pos-white" @click="printReceipt">Cetak Struk</button>
+                    <button class="pos-ghost" @click="closeReceipt">Transaksi Baru</button>
+                </div>
+            </div>
+        </div>
+
+        <ConfirmDialog
+            :open="confirmClear"
+            title="Kosongkan keranjang?"
+            message="Semua produk di keranjang akan dihapus."
+            confirm-text="Ya, kosongkan"
+            danger
+            @confirm="doClear"
+            @cancel="confirmClear = false"
+        />
     </div>
 </template>
 
 <style>
+.pos {
+    --bg: #f4f4f5; --card: #ffffff; --text: #111111; --muted: #71717a; --border: #e4e4e7;
+    --accent: #111111; --accent-text: #ffffff; --soft: #f4f4f5; --danger: #dc2626; --ok: #16a34a;
+    height: 100svh; display: flex; flex-direction: column; background: var(--bg); color: var(--text); font-size: 14px;
+}
+.dark .pos {
+    --bg: #0a0a0a; --card: #171717; --text: #fafafa; --muted: #a1a1aa; --border: #2e2e2e;
+    --accent: #fafafa; --accent-text: #111111; --soft: #262626;
+}
+.pos *, .pos *::before, .pos *::after { box-sizing: border-box; }
+:where(.pos) :is(button, select, input) { font: inherit; color: inherit; }
+.pos button, .pos select, .pos label, .pos a { cursor: pointer; }
+.pos button:disabled { cursor: not-allowed; opacity: 0.4; }
+
+/* util */
+.pos-row { display: flex; align-items: center; gap: 10px; }
+.pos-top { align-items: flex-start; }
+.pos-between { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pos-stack { display: flex; flex-direction: column; gap: 12px; }
+.pos-grow { flex: 1; min-width: 0; }
+.pos-muted { color: var(--muted); }
+.pos-xs { font-size: 12px; }
+.pos-bold { font-weight: 700; }
+.pos-medium { font-weight: 500; }
+.pos-normal { font-weight: 400; }
+.pos-center { text-align: center; }
+.pos-justify { justify-content: center; }
+.pos-mt { margin-top: 8px; }
+.pos-ml { margin-left: auto; }
+.pos-mono { font-family: ui-monospace, monospace; letter-spacing: 0.5px; }
+.pos-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pos-danger-text { color: var(--danger); }
+.pos-ok-text { color: var(--ok); }
+.pos-underline { text-decoration: underline; font-weight: 600; }
+.pos-span { grid-column: 1 / -1; }
+.pos-empty { padding: 40px 0; text-align: center; color: var(--muted); }
+.pos-lg { font-size: 18px; }
+
+/* header */
+.pos-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--border); }
+.pos-alert { padding: 8px 16px; text-align: center; color: var(--danger); background: rgba(220, 38, 38, 0.1); }
+
+/* controls */
+.pos-btn { display: inline-flex; align-items: center; padding: 7px 14px; border: 1px solid var(--border); border-radius: 10px; background: transparent; text-decoration: none; }
+.pos-btn:hover { background: var(--soft); }
+.pos-btn-lg { padding: 12px 20px; }
+.pos-link { background: none; border: 0; padding: 4px; }
+.pos-input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); outline: none; }
+.pos-input:focus { border-color: var(--text); }
+.pos-auto { width: auto; padding: 7px 10px; }
+.pos-disc { width: 130px; padding: 7px 10px; text-align: right; }
+.pos-chip { flex-shrink: 0; padding: 7px 16px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); }
+.pos-chip:hover:not(:disabled) { border-color: var(--muted); }
+.pos-chip.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.pos-primary { padding: 14px; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-text); font-weight: 600; font-size: 16px; width: 100%; }
+.pos-primary.pos-grow { width: auto; }
+.pos-white { padding: 12px 24px; border: 0; border-radius: 12px; background: #fff; color: #000; font-weight: 600; }
+.pos-ghost { padding: 12px 24px; border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 12px; background: transparent; color: #fff; font-weight: 600; }
+
+/* layout */
+.pos-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 380px; }
+.pos-catalog { display: flex; flex-direction: column; gap: 12px; padding: 12px; min-height: 0; min-width: 0; }
+.pos-cats { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; flex-shrink: 0; }
+.pos-grid { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; align-content: start; }
+.pos-card { display: block; padding: 0; overflow: hidden; text-align: left; border: 1px solid var(--border); border-radius: 12px; background: var(--card); transition: transform 0.08s, border-color 0.15s, box-shadow 0.15s; }
+.pos-card:hover { border-color: var(--muted); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08); }
+.pos-card:active { transform: scale(0.97); }
+.pos-thumb { aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; background: var(--soft); font-size: 36px; font-weight: 700; color: var(--muted); }
+.pos-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.pos-card-body { padding: 10px; }
+.pos-name { font-weight: 500; line-height: 1.25; min-height: 2.5em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pos-price { margin-top: 4px; }
+
+/* keranjang */
+.pos-cart { display: flex; flex-direction: column; min-height: 0; background: var(--card); border-left: 1px solid var(--border); }
+.pos-cart-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; }
+.pos-lines { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 12px; display: flex; flex-direction: column; gap: 8px; }
+.pos-line { padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.pos-mini { width: 44px; height: 44px; flex-shrink: 0; border-radius: 8px; overflow: hidden; background: var(--soft); display: flex; align-items: center; justify-content: center; font-weight: 700; color: var(--muted); }
+.pos-mini img { width: 100%; height: 100%; object-fit: cover; }
+.pos-sq { width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 10px; background: transparent; font-size: 18px; }
+.pos-sq:hover { background: var(--soft); }
+.pos-qty { width: 60px; height: 36px; border: 1px solid var(--border); border-radius: 10px; background: transparent; text-align: center; }
+.pos-summary { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-top: 1px solid var(--border); }
+.pos-total { font-size: 18px; font-weight: 700; }
+.pos-mbar { display: none; }
+.pos-mobile-only { display: none; }
+
+/* modal */
+.pos-overlay { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, 0.6); overflow-y: auto; }
+.pos-modal { width: 100%; max-width: 460px; max-height: calc(100svh - 32px); overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 20px; border: 1px solid var(--border); border-radius: 16px; background: var(--card); }
+.pos-big { font-size: 32px; font-weight: 800; }
+.pos-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.pos-quick { display: flex; flex-wrap: wrap; gap: 8px; }
+.pos-notice { padding: 14px; border-radius: 10px; background: rgba(245, 158, 11, 0.12); color: #b45309; text-align: center; }
+.pos-qris { width: 100%; max-width: 280px; margin: 0 auto; border-radius: 12px; background: #fff; padding: 8px; }
+.pos-bank { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.pos-bank.on { border-color: var(--text); background: var(--soft); }
+.pos-error { margin: 0; padding: 10px 12px; border-radius: 10px; background: rgba(220, 38, 38, 0.1); color: var(--danger); }
+
+.pos-seg { display: flex; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; }
+.pos-seg button { padding: 7px 12px; border: 0; background: transparent; }
+.pos-seg button.on { background: var(--accent); color: var(--accent-text); }
+
+/* struk */
+.pos-receipt-wrap { width: 100%; max-width: 360px; }
+.pos-receipt { width: 302px; margin: 0 auto; padding: 12px; background: #fff; color: #000; font-family: ui-monospace, 'Courier New', monospace; font-size: 12px; line-height: 1.35; }
+.rc-center { text-align: center; }
+.rc-bold { font-weight: 700; }
+.rc-hr { border: 0; border-top: 1px dashed #000; margin: 8px 0; }
+.rc-row { display: flex; justify-content: space-between; gap: 8px; }
+.rc-item { margin-bottom: 4px; }
+
+/* responsif: HP & tablet kecil */
+@media (max-width: 899px) {
+    .pos-body { grid-template-columns: 1fr; }
+    .pos-grid { padding-bottom: 76px; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+    .pos-cart { position: fixed; inset: 0; z-index: 40; border-left: 0; transform: translateY(100%); transition: transform 0.25s ease; }
+    .pos-cart.open { transform: none; }
+    .pos-mobile-only { display: inline-flex; }
+    .pos-mbar {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 30;
+        padding: 14px 18px; border: 0; border-radius: 14px; background: var(--accent); color: var(--accent-text);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+}
+
 @media print {
     body * { visibility: hidden !important; }
     #receipt, #receipt * { visibility: visible !important; }
+    .pos-overlay { position: static !important; overflow: visible !important; background: none !important; padding: 0 !important; }
     #receipt { position: absolute; left: 0; top: 0; width: 80mm; padding: 2mm; }
     @page { margin: 0; }
 }

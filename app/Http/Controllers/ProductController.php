@@ -8,7 +8,9 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use App\Support\ImageStore;
 
 class ProductController extends Controller
 {
@@ -107,18 +109,18 @@ class ProductController extends Controller
             'sell_price' => ['required', 'integer', 'min:0'],
             'track_stock' => ['boolean'],
             'is_active' => ['boolean'],
-            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'image_data' => ['nullable', 'string', 'max:4000000'],
             'remove_image' => ['nullable', 'boolean'],
         ]);
     }
 
     private function handleImage(Request $request, array $data, string $businessId, ?Product $product = null): array
     {
-        $file = $request->file('image');
-        unset($data['image'], $data['remove_image']);
+        $dataUrl = $data['image_data'] ?? null;
+        unset($data['image_data'], $data['remove_image'], $data['image']);
 
-        if ($file) {
-            $data['image_path'] = $file->store("products/{$businessId}", 'public');
+        if ($dataUrl) {
+            $data['image_path'] = ImageStore::fromDataUrl($dataUrl, "products/{$businessId}");
             if ($product?->image_path) {
                 Storage::disk('public')->delete($product->image_path);
             }

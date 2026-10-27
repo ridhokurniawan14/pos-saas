@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
+import MoneyInput from '@/components/MoneyInput.vue';
 
 const props = defineProps<{
     categories: { id: string; name: string }[];
@@ -20,7 +21,7 @@ const form = useForm({
     sell_price: props.product?.sell_price ?? 0,
     track_stock: props.product?.track_stock ?? true,
     is_active: props.product?.is_active ?? true,
-    image: null as File | null,
+    image_data: null as string | null,
     remove_image: false,
     units: (props.product?.units ?? []).map((u: any) => ({
         name: u.name,
@@ -37,15 +38,27 @@ const form = useForm({
 
 const preview = ref<string | null>(props.product?.image_url ?? null);
 
-const onFile = (e: Event) => {
-    const f = (e.target as HTMLInputElement).files?.[0] ?? null;
-    form.image = f;
-    form.remove_image = false;
-    preview.value = f ? URL.createObjectURL(f) : (props.product?.image_url ?? null);
+const fileEl = ref<HTMLInputElement | null>(null);
+
+const onFile = async (e: Event) => {
+    const input = e.target as HTMLInputElement;
+    const f = input.files?.[0];
+    if (!f) return;
+
+    try {
+        const url = await compressToDataUrl(f, 800);
+        form.image_data = url;
+        form.remove_image = false;
+        form.clearErrors('image_data');
+        preview.value = url;
+    } catch {
+        form.setError('image_data', 'File bukan gambar yang valid.');
+    }
+    input.value = '';
 };
 
 const removeImage = () => {
-    form.image = null;
+    form.image_data = null;
     form.remove_image = true;
     preview.value = null;
 };
@@ -76,15 +89,27 @@ const rangeLabel = (pos: number) => {
 const hasTierError = computed(() => Object.keys(form.errors).some((k) => k.startsWith('tiers')));
 const hasUnitError = computed(() => Object.keys(form.errors).some((k) => k.startsWith('units')));
 
+const errorBox = ref<HTMLElement | null>(null);
+
 const submit = () => {
     form.transform((d) => ({
         ...d,
+        cost_price: d.cost_price ?? 0,
+        sell_price: d.sell_price ?? 0,
         category_id: d.category_id || null,
-        units: d.units.map((u) => ({ ...u, barcode: u.barcode || null })),
-        tiers: d.tiers.map((t) => ({ ...t, unit_name: t.unit_name || null })),
-        _method: props.product ? 'put' : 'post',
-    })).post(props.product ? `/products/${props.product.id}` : '/products', { forceFormData: true });
+        units: d.units.map((u) => ({ ...u, sell_price: u.sell_price ?? 0, barcode: u.barcode || null })),
+        tiers: d.tiers.map((t) => ({ ...t, price: t.price ?? 0, unit_name: t.unit_name || null })),
+    }));
+
+    const options = {
+        preserveScroll: true,
+        onError: () => nextTick(() => errorBox.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })),
+    };
+
+    props.product ? form.put(`/products/${props.product.id}`, options) : form.post('/products', options);
 };
+
+import { compressToDataUrl } from '@/lib/image';
 
 const input =
     'w-full rounded-lg border bg-transparent px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:[color-scheme:dark]';
@@ -100,21 +125,38 @@ const input =
             {{ form.errors.limit }}
         </p>
 
-        <form @submit.prevent="submit" class="space-y-4">
+        <form @submit.prevent="submit" novalidate class="space-y-4">
             <div>
                 <label class="mb-1.5 block text-sm font-medium">Foto produk</label>
                 <div class="flex items-center gap-4">
-                    <div class="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800">
+                    <button
+                        type="button"
+                        class="flex h-24 w-24 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 border-dashed bg-neutral-100 transition hover:border-neutral-500 dark:border-neutral-700 dark:bg-neutral-800"
+                        @click="fileEl?.click()"
+                    >
                         <img v-if="preview" :src="preview" class="h-full w-full object-cover" />
-                        <span v-else class="text-xs text-neutral-400">Tanpa foto</span>
-                    </div>
+                        <span v-else class="px-2 text-center text-xs text-neutral-500">+ Tambah foto</span>
+                    </button>
+
                     <div class="space-y-2">
-                        <input type="file" accept="image/png,image/jpeg,image/webp" class="block text-sm" @change="onFile" />
-                        <button v-if="preview" type="button" class="text-sm text-red-500" @click="removeImage">Hapus foto</button>
-                        <p class="text-xs text-neutral-500">JPG, PNG, atau WebP. Maksimal 2 MB.</p>
+                        <div class="flex gap-2">
+                            <button
+                                type="button"
+                                class="cursor-pointer rounded-lg border px-4 py-2 text-sm font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                                @click="fileEl?.click()"
+                            >
+                                {{ preview ? 'Ganti foto' : 'Pilih foto' }}
+                            </button>
+                            <button v-if="preview" type="button" class="cursor-pointer rounded-lg px-3 py-2 text-sm text-red-500 hover:bg-red-500/10" @click="removeImage">
+                                Hapus
+                            </button>
+                        </div>
+                        <p class="text-xs text-neutral-500">JPG, PNG, atau WebP. Ukuran dikecilkan otomatis.</p>
                     </div>
+
+                    <input ref="fileEl" type="file" accept="image/png,image/jpeg,image/webp" style="display: none" @change="onFile" />
                 </div>
-                <p v-if="form.errors.image" class="mt-1 text-sm text-red-500">{{ form.errors.image }}</p>
+                <p v-if="form.errors.image_data" class="mt-1 text-sm text-red-500">{{ form.errors.image_data }}</p>
             </div>
             <div>
                 <label class="mb-1.5 block text-sm font-medium">Nama produk</label>
@@ -153,12 +195,14 @@ const input =
             <div class="grid gap-4 sm:grid-cols-2">
                 <div>
                     <label class="mb-1.5 block text-sm font-medium">Harga modal (Rp)</label>
-                    <input v-model.number="form.cost_price" type="number" min="0" :class="input" />
+                    <!-- Harga modal -->
+                     <MoneyInput v-model="form.cost_price" :class="input" />
                     <p v-if="form.errors.cost_price" class="mt-1 text-sm text-red-500">{{ form.errors.cost_price }}</p>
                 </div>
                 <div>
                     <label class="mb-1.5 block text-sm font-medium">Harga jual (Rp)</label>
-                    <input v-model.number="form.sell_price" type="number" min="0" :class="input" />
+                    <!-- Harga jual -->
+                     <MoneyInput v-model="form.sell_price" :class="input" />
                     <p v-if="form.errors.sell_price" class="mt-1 text-sm text-red-500">{{ form.errors.sell_price }}</p>
                 </div>
             </div>
@@ -191,7 +235,8 @@ const input =
                         <div v-for="(u, i) in form.units" :key="i" class="grid grid-cols-2 items-center gap-2 sm:grid-cols-5">
                             <input v-model="u.name" placeholder="Nama (dus)" :class="input" />
                             <input v-model.number="u.conversion" type="number" min="2" placeholder="Isi" :class="input" />
-                            <input v-model.number="u.sell_price" type="number" min="0" placeholder="Harga" :class="input" />
+                            <!-- Satuan bertingkat: harga -->
+                             <MoneyInput v-model="u.sell_price" placeholder="Harga" :class="input" />
                             <input v-model="u.barcode" placeholder="Barcode" :class="input" />
                             <button type="button" class="text-sm text-red-500" @click="form.units.splice(i, 1)">Hapus</button>
                         </div>
@@ -224,7 +269,8 @@ const input =
                                 </option>
                             </select>
                             <input v-model.number="form.tiers[item.i].min_qty" type="number" min="2" placeholder="Mulai dari" :class="input" />
-                            <input v-model.number="form.tiers[item.i].price" type="number" min="0" placeholder="Harga/satuan" :class="input" />
+                            <!-- Harga bertingkat: harga/satuan -->
+                            <MoneyInput v-model="form.tiers[item.i].price" placeholder="Harga/satuan" :class="input" />
                             <span class="text-center text-sm text-neutral-500">{{ rangeLabel(pos) }}</span>
                             <button type="button" class="text-sm text-red-500" @click="form.tiers.splice(item.i, 1)">Hapus</button>
                         </div>
@@ -238,6 +284,17 @@ const input =
                 <p v-else class="text-sm text-neutral-500">
                     Upgrade ke paket Tumbuh untuk menjual per dus/lusin dan memberi harga grosir otomatis.
                 </p>
+            </div>
+
+            <div
+                v-if="Object.keys(form.errors).length"
+                ref="errorBox"
+                class="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600"
+            >
+                <p class="font-medium">Data belum bisa disimpan:</p>
+                <ul class="mt-1 list-disc pl-5">
+                    <li v-for="(msg, key) in form.errors" :key="key">{{ msg }}</li>
+                </ul>
             </div>
 
             <div class="flex gap-3 pt-2">

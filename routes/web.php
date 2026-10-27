@@ -4,6 +4,8 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\OnboardingController;
+use App\Http\Controllers\OrderController;
+use App\Http\Controllers\PaymentSettingController;
 use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\StockController;
@@ -21,6 +23,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('pos', [PosController::class, 'index'])->name('pos.index');
     Route::post('pos/orders', [PosController::class, 'store'])->name('pos.orders.store');
+
+    Route::get('payment-settings', [PaymentSettingController::class, 'index'])->name('payments.index');
+    Route::put('payment-settings', [PaymentSettingController::class, 'update']);
+    Route::post('payment-settings/qris', [PaymentSettingController::class, 'qris']);
+    Route::delete('payment-settings/qris', [PaymentSettingController::class, 'destroyQris']);
+    Route::post('payment-settings/banks', [PaymentSettingController::class, 'storeBank']);
+    Route::delete('payment-settings/banks/{id}', [PaymentSettingController::class, 'destroyBank']);
+
+    Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
+    Route::get('orders/{id}', [OrderController::class, 'show'])->name('orders.show');
+    Route::post('orders/{id}/void', [OrderController::class, 'void'])->name('orders.void');
 });
 
 Route::middleware('auth')->group(function () {

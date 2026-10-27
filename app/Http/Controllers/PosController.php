@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use App\Models\Order;
+use App\Models\PaymentSetting;
 use App\Models\Product;
 use App\Services\PricingService;
 use App\Services\StockService;
@@ -52,6 +53,7 @@ class PosController extends Controller
             'outlets' => $business->outlets()->where('is_active', true)->orderBy('created_at')->get(['id', 'name']),
             'categories' => Category::orderBy('name')->get(['id', 'name']),
             'products' => $products,
+            'payment_methods' => PaymentSetting::current()->available(),
         ]);
     }
 
@@ -66,10 +68,12 @@ class PosController extends Controller
             'items.*.product_id' => ['required', 'uuid'],
             'items.*.unit_name' => ['nullable', 'string', 'max:30'],
             'items.*.qty' => ['required', 'integer', 'min:1', 'max:100000'],
-            'discount' => ['nullable', 'integer', 'min:0'],
+            'discount_type' => ['nullable', 'in:rp,percent'],
+            'discount_value' => ['nullable', 'integer', 'min:0'],
             'payments' => ['required', 'array', 'min:1', 'max:3'],
-            'payments.*.method' => ['required', 'in:cash,qris,debit,transfer'],
+            'payments.*.method' => ['required', 'string'],
             'payments.*.amount' => ['required', 'integer', 'min:0'],
+            'payments.*.bank_account_id' => ['nullable', 'uuid'],
             'note' => ['nullable', 'string', 'max:200'],
             'created_at_client' => ['nullable', 'date'],
         ]);
@@ -86,8 +90,28 @@ class PosController extends Controller
             ]);
         }
 
+        // Validasi metode pembayaran terhadap pengaturan bisnis
+        $available = collect(PaymentSetting::current()->available())->keyBy('key');
+        $payments = [];
+        foreach ($data['payments'] as $pay) {
+            if (! $available->has($pay['method'])) {
+                throw ValidationException::withMessages(['payments' => 'Metode pembayaran tidak aktif.']);
+            }
+
+            $ref = null;
+            if ($pay['method'] === 'transfer') {
+                $bank = collect($available['transfer']['banks'])->firstWhere('id', $pay['bank_account_id'] ?? null);
+                if (! $bank) {
+                    throw ValidationException::withMessages(['payments' => 'Pilih rekening tujuan transfer.']);
+                }
+                $ref = $bank['bank_name'] . ' ' . $bank['account_number'];
+            }
+
+            $payments[] = ['method' => $pay['method'], 'amount' => (int) $pay['amount'], 'ref' => $ref];
+        }
+
         try {
-            $order = DB::transaction(function () use ($data, $business, $stock, $pricing) {
+            $order = DB::transaction(function () use ($data, $payments, $business, $stock, $pricing) {
                 $wholesale = $business->canUse('wholesale');
                 $trackStock = $business->canUse('stock_management');
 
@@ -97,7 +121,7 @@ class PosController extends Controller
 
                 $lines = [];
                 $subtotal = 0;
-                $stockOut = []; // product_id => qty satuan dasar
+                $stockOut = [];
 
                 foreach ($data['items'] as $it) {
                     $p = $products[$it['product_id']] ?? null;
@@ -113,7 +137,7 @@ class PosController extends Controller
                     $lines[] = [
                         'product_id' => $p->id,
                         'name_snapshot' => $p->name,
-                        'unit_name' => $it['unit_name'] ?: null,
+                        'unit_name' => ($it['unit_name'] ?? null) ?: null,
                         'conversion' => $r['conversion'],
                         'qty' => $it['qty'],
                         'price_snapshot' => $r['price'],
@@ -126,10 +150,14 @@ class PosController extends Controller
                     }
                 }
 
-                $discount = min((int) ($data['discount'] ?? 0), $subtotal);
+                $dv = (int) ($data['discount_value'] ?? 0);
+                $discount = ($data['discount_type'] ?? 'rp') === 'percent'
+                    ? intdiv($subtotal * min($dv, 100) + 50, 100)
+                    : $dv;
+                $discount = min($discount, $subtotal);
                 $total = $subtotal - $discount;
-                $paid = (int) collect($data['payments'])->sum('amount');
-                $cash = (int) collect($data['payments'])->where('method', 'cash')->sum('amount');
+                $paid = (int) collect($payments)->sum('amount');
+                $cash = (int) collect($payments)->where('method', 'cash')->sum('amount');
                 $change = $paid - $total;
 
                 if ($paid < $total) {
@@ -156,11 +184,11 @@ class PosController extends Controller
                 foreach ($lines as $l) {
                     $order->items()->create($l);
                 }
-                foreach ($data['payments'] as $pay) {
-                    $order->payments()->create(['method' => $pay['method'], 'amount' => $pay['amount']]);
+                foreach ($payments as $pay) {
+                    $order->payments()->create($pay);
                 }
 
-                ksort($stockOut); // urutan konsisten, cegah deadlock
+                ksort($stockOut);
                 foreach ($stockOut as $productId => $baseQty) {
                     $stock->move($data['outlet_id'], $products[$productId], 'sale', -$baseQty, 'Penjualan ' . $order->order_number, 'order', $order->id);
                 }
@@ -168,7 +196,6 @@ class PosController extends Controller
                 return $order->load(['items', 'payments', 'outlet', 'cashier']);
             });
         } catch (UniqueConstraintViolationException) {
-            // dua request bersamaan dengan UUID sama
             $order = Order::with(['items', 'payments', 'outlet', 'cashier'])->findOrFail($data['id']);
         }
 
@@ -177,32 +204,6 @@ class PosController extends Controller
 
     private function payload(Order $o, $business): array
     {
-        return [
-            'business' => $business->name,
-            'cashier' => $o->cashier?->name,
-            'outlet' => [
-                'name' => $o->outlet->name,
-                'address' => $o->outlet->address,
-                'phone' => $o->outlet->phone,
-                'footer' => $o->outlet->receipt_footer,
-            ],
-            'order' => [
-                'number' => $o->order_number,
-                'date' => $o->created_at->timezone($business->timezone)->format('d/m/Y H:i'),
-                'items' => $o->items->map(fn($i) => [
-                    'name' => $i->name_snapshot,
-                    'unit' => $i->unit_name,
-                    'qty' => $i->qty,
-                    'price' => $i->price_snapshot,
-                    'subtotal' => $i->subtotal,
-                ])->values(),
-                'subtotal' => $o->subtotal,
-                'discount' => $o->discount,
-                'total' => $o->total,
-                'paid' => $o->paid,
-                'change' => $o->change_amount,
-                'payments' => $o->payments->map(fn($p) => ['method' => $p->method, 'amount' => $p->amount])->values(),
-            ],
-        ];
+        return \App\Support\ReceiptPayload::make($o, $business);
     }
 }

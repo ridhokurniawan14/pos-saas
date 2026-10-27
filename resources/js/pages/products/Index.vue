@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
 import { ref } from 'vue';
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
 
 const props = defineProps<{
     products: { data: any[]; links: { url: string | null; label: string; active: boolean }[] };
@@ -13,8 +14,12 @@ const doSearch = () => router.get('/products', { search: search.value }, { prese
 
 const rupiah = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
 
-const remove = (id: string) => {
-    if (confirm('Hapus produk ini?')) router.delete(`/products/${id}`, { preserveScroll: true });
+const target = ref<any>(null);
+
+const remove = () => {
+    if (!target.value) return;
+    router.delete(`/products/${target.value.id}`, { preserveScroll: true });
+    target.value = null;
 };
 </script>
 
@@ -71,7 +76,7 @@ const remove = (id: string) => {
                         </td>
                         <td class="space-x-3 px-4 py-3 text-right">
                             <Link :href="`/products/${p.id}/edit`" class="text-neutral-500 hover:text-neutral-900 dark:hover:text-white">Edit</Link>
-                            <button class="text-red-500" @click="remove(p.id)">Hapus</button>
+                            <button class="text-red-500" @click="target = p">Hapus</button>
                         </td>
                     </tr>
                     <tr v-if="!products.data.length">
@@ -95,4 +100,13 @@ const remove = (id: string) => {
             </template>
         </div>
     </div>
+    <ConfirmDialog
+        :open="!!target"
+        title="Hapus produk ini?"
+        :message="target?.name"
+        confirm-text="Ya, hapus"
+        danger
+        @confirm="remove"
+        @cancel="target = null"
+    />
 </template>

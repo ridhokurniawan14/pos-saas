@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
 
 defineProps<{ categories: { id: string; name: string; products_count: number }[] }>();
 
@@ -21,10 +22,12 @@ const saveEdit = (id: string) =>
         onSuccess: () => (editingId.value = null),
     });
 
-const remove = (id: string) => {
-    if (confirm('Hapus kategori ini? Produk di dalamnya tidak ikut terhapus.')) {
-        router.delete(`/categories/${id}`, { preserveScroll: true });
-    }
+const target = ref<{ id: string; name: string } | null>(null);
+
+const remove = () => {
+    if (!target.value) return;
+    router.delete(`/categories/${target.value.id}`, { preserveScroll: true });
+    target.value = null;
 };
 </script>
 
@@ -72,11 +75,20 @@ const remove = (id: string) => {
                     </div>
                     <div class="flex gap-3 text-sm">
                         <button class="text-neutral-500 hover:text-neutral-900 dark:hover:text-white" @click="startEdit(c)">Edit</button>
-                        <button class="text-red-500" @click="remove(c.id)">Hapus</button>
+                        <button class="text-red-500" @click="target = c">Hapus</button>
                     </div>
                 </template>
             </div>
             <p v-if="!categories.length" class="px-4 py-8 text-center text-sm text-neutral-500">Belum ada kategori.</p>
         </div>
     </div>
+    <ConfirmDialog
+        :open="!!target"
+        title="Hapus kategori ini?"
+        message="Produk di dalamnya tidak ikut terhapus."
+        confirm-text="Ya, hapus"
+        danger
+        @confirm="remove"
+        @cancel="target = null"
+    />
 </template>

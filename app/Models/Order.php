@@ -14,7 +14,10 @@ class Order extends Model
 
     protected function casts(): array
     {
-        return ['created_at_client' => 'datetime'];
+        return [
+            'created_at_client' => 'datetime',
+            'voided_at' => 'datetime',
+        ];
     }
 
     public function items()

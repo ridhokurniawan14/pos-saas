@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { BookOpen, FolderGit2, LayoutGrid, Package, Tags, Boxes, ShoppingCart } from '@lucide/vue';
+import { BookOpen, FolderGit2, LayoutGrid, Package, Tags, Boxes, ShoppingCart, CreditCard, Receipt } from '@lucide/vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -26,7 +26,9 @@ const mainNavItems: NavItem[] = [
     { title: 'Kategori', href: '/categories', icon: Tags },
     { title: 'Produk', href: '/products', icon: Package },
     { title: 'Stok', href: '/stock', icon: Boxes },
+    { title: 'Pembayaran', href: '/payment-settings', icon: CreditCard },
     { title: 'Kasir', href: '/pos', icon: ShoppingCart },
+    { title: 'Riwayat', href: '/orders', icon: Receipt },
 ];
 
 const footerNavItems: NavItem[] = [
