@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
-import { Head, Link, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onMounted, ref, watch } from 'vue';
 import MoneyInput from '@/components/MoneyInput.vue';
+import ShiftGate from '@/components/ShiftGate.vue';
+import ShiftPanel from '@/components/ShiftPanel.vue';
+import ReceiptModal from '@/components/ReceiptModal.vue';
 
 type Unit = { name: string; conversion: number; sell_price: number };
 type Tier = { unit_name: string | null; min_qty: number; price: number };
 type Product = {
     id: string; name: string; sku: string | null; barcode: string | null; unit: string;
     sell_price: number; category_id: string | null; image_url: string | null; units: Unit[]; tiers: Tier[];
+    stock: number | null;
 };
 type Line = { product: Product; unit_name: string; qty: number };
 type Bank = { id: string; bank_name: string; account_number: string; account_name: string };
@@ -20,6 +24,8 @@ const props = defineProps<{
     categories: { id: string; name: string }[];
     products: Product[];
     payment_methods: PayMethod[];
+    shift: any | null;
+    allow_negative_stock: boolean;
 }>();
 
 const page = usePage<any>();
@@ -39,7 +45,8 @@ const xsrf = () =>
     decodeURIComponent(document.cookie.split('; ').find((c) => c.startsWith('XSRF-TOKEN='))?.split('=')[1] ?? '');
 
 /* ---------- state ---------- */
-const outletId = ref(props.outlets[0]?.id ?? '');
+const outletId = ref(props.shift?.outlet_id ?? '');
+const panelOpen = ref(false);
 const search = ref('');
 const categoryId = ref<string | null>(null);
 const cart = ref<Line[]>([]);
@@ -98,6 +105,14 @@ const discountApplied = computed(() => {
 });
 const total = computed(() => subtotal.value - discountApplied.value);
 const itemCount = computed(() => cart.value.reduce((s, l) => s + l.qty, 0));
+
+const conv = (l: Line) => (l.unit_name ? (l.product.units.find((u) => u.name === l.unit_name)?.conversion ?? 1) : 1);
+const usedBase = (productId: string) =>
+    cart.value.filter((l) => l.product.id === productId).reduce((s, l) => s + l.qty * conv(l), 0);
+const soldOut = (p: Product) => p.stock !== null && !props.allow_negative_stock && p.stock <= 0;
+const overStock = (l: Line) =>
+    l.product.stock !== null && !props.allow_negative_stock && usedBase(l.product.id) > l.product.stock;
+const hasOver = computed(() => cart.value.some(overStock));
 
 /* ---------- keranjang ---------- */
 const add = (p: Product) => {
@@ -219,6 +234,7 @@ const checkout = async () => {
             payOpen.value = false;
             cartOpen.value = false;
             orderId.value = uuid();
+            router.reload({ only: ['shift', 'products'] });
             return;
         }
 
@@ -258,9 +274,10 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
                     <div class="pos-muted pos-xs">Kasir</div>
                 </div>
             </div>
-            <select v-if="outlets.length > 1" v-model="outletId" class="pos-input pos-auto">
-                <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
-            </select>
+            <div v-if="shift" class="pos-row">
+                <span class="pos-muted pos-xs">{{ shift.outlet_name }}</span>
+                <button type="button" class="pos-btn" @click="panelOpen = true">Kas &amp; Tutup Kasir</button>
+            </div>
         </header>
 
         <div v-if="readOnly" class="pos-alert">
@@ -287,7 +304,7 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
                 </div>
 
                 <div class="pos-grid">
-                    <button v-for="p in filtered" :key="p.id" class="pos-card" @click="add(p)">
+                    <button v-for="p in filtered" :key="p.id" :disabled="soldOut(p)" class="pos-card" @click="add(p)">
                         <div class="pos-thumb">
                             <img v-if="p.image_url" :src="p.image_url" :alt="p.name" loading="lazy" />
                             <span v-else>{{ p.name.charAt(0).toUpperCase() }}</span>
@@ -295,6 +312,9 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
                         <div class="pos-card-body">
                             <div class="pos-name">{{ p.name }}</div>
                             <div class="pos-bold pos-price">{{ rupiah(p.sell_price) }}</div>
+                            <div v-if="p.stock !== null" class="pos-xs" :class="p.stock <= 0 ? 'pos-danger-text' : 'pos-muted'">
+                                {{ p.stock <= 0 ? 'Habis' : `Stok: ${p.stock}` }}
+                            </div>
                             <div v-if="p.units.length" class="pos-muted pos-xs pos-ellipsis">+ {{ p.units.map((u) => u.name).join(', ') }}</div>
                         </div>
                     </button>
@@ -336,6 +356,9 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
                                 <option v-for="u in l.product.units" :key="u.name" :value="u.name">{{ u.name }}</option>
                             </select>
                         </div>
+                        <p v-if="overStock(l)" class="pos-error" style="margin-top: 8px">
+                            Stok tersisa {{ l.product.stock }} {{ l.product.unit }}. Kurangi jumlahnya.
+                        </p>
                     </div>
                     <p v-if="!cart.length" class="pos-empty">Pilih produk untuk memulai.</p>
                 </div>
@@ -357,7 +380,7 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
                         <span>Potongan</span><span>-{{ rupiah(discountApplied) }}</span>
                     </div>
                     <div class="pos-between pos-total"><span>Total</span><span>{{ rupiah(total) }}</span></div>
-                    <button class="pos-primary" :disabled="!cart.length || readOnly" @click="openPay">Bayar</button>
+                    <button class="pos-primary" :disabled="!cart.length || readOnly || hasOver" @click="openPay">Bayar</button>
                 </div>
             </aside>
         </div>
@@ -442,44 +465,10 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
         </div>
 
         <!-- Struk -->
-        <div v-if="receipt" class="pos-overlay" @click.self="closeReceipt">
-            <div class="pos-stack pos-receipt-wrap">
-                <div id="receipt" class="pos-receipt">
-                    <div class="rc-center">
-                        <div class="rc-bold">{{ receipt.business }}</div>
-                        <div>{{ receipt.outlet.name }}</div>
-                        <div v-if="receipt.outlet.address">{{ receipt.outlet.address }}</div>
-                        <div v-if="receipt.outlet.phone">{{ receipt.outlet.phone }}</div>
-                    </div>
-                    <hr class="rc-hr" />
-                    <div>{{ receipt.order.number }}</div>
-                    <div>{{ receipt.order.date }} · {{ receipt.cashier }}</div>
-                    <hr class="rc-hr" />
-                    <div v-for="(it, i) in receipt.order.items" :key="i" class="rc-item">
-                        <div>{{ it.name }}</div>
-                        <div class="rc-row">
-                            <span>{{ it.qty }} {{ it.unit || '' }} x {{ rupiah(it.price) }}</span>
-                            <span>{{ rupiah(it.subtotal) }}</span>
-                        </div>
-                    </div>
-                    <hr class="rc-hr" />
-                    <div class="rc-row"><span>Subtotal</span><span>{{ rupiah(receipt.order.subtotal) }}</span></div>
-                    <div v-if="receipt.order.discount" class="rc-row"><span>Diskon</span><span>-{{ rupiah(receipt.order.discount) }}</span></div>
-                    <div class="rc-row rc-bold"><span>TOTAL</span><span>{{ rupiah(receipt.order.total) }}</span></div>
-                    <div v-for="(p, i) in receipt.order.payments" :key="i" class="rc-row">
-                        <span>{{ methodLabel[p.method] }}</span><span>{{ rupiah(p.amount) }}</span>
-                    </div>
-                    <div class="rc-row"><span>Kembali</span><span>{{ rupiah(receipt.order.change) }}</span></div>
-                    <hr class="rc-hr" />
-                    <div class="rc-center">{{ receipt.outlet.footer || 'Terima kasih atas kunjungan Anda' }}</div>
-                </div>
+        <ReceiptModal v-if="receipt" :receipt="receipt" close-label="Transaksi Baru" @close="closeReceipt" />
 
-                <div class="pos-row pos-justify">
-                    <button class="pos-white" @click="printReceipt">Cetak Struk</button>
-                    <button class="pos-ghost" @click="closeReceipt">Transaksi Baru</button>
-                </div>
-            </div>
-        </div>
+        <ShiftGate v-if="!shift" :outlets="outlets" />
+        <ShiftPanel v-if="shift && panelOpen" :shift="shift" @close="panelOpen = false" />
 
         <ConfirmDialog
             :open="confirmClear"

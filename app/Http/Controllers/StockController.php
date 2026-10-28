@@ -63,7 +63,7 @@ class StockController extends Controller
 
         match ($data['mode']) {
             'add' => $stock->move($data['outlet_id'], $product, 'purchase', $base, $data['note'] ?? 'Stok masuk'),
-            'subtract' => $stock->move($data['outlet_id'], $product, 'adjustment', -$base, $data['note'] ?? 'Stok keluar'),
+            'subtract' => $stock->move($data['outlet_id'], $product, 'adjustment', -$base, $data['note'] ?? 'Stok keluar', null, null, false),
             'set' => $stock->setTo($data['outlet_id'], $product, $base, $data['note'] ?? 'Stok opname'),
         };
 

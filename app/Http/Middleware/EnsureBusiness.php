@@ -21,7 +21,7 @@ class EnsureBusiness
         $request->attributes->set('business', $business);
         app()->instance('current_business_id', $business->id);
 
-        if ($request->routeIs('logout', 'verification.*', 'onboarding.*')) {
+        if ($request->routeIs('logout', 'verification.*', 'onboarding.*', 'shifts.close')) {
             return $next($request);
         }
 

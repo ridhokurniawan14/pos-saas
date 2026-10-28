@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 
 class Business extends Model
 {
@@ -17,7 +18,10 @@ class Business extends Model
 
     protected function casts(): array
     {
-        return ['trial_ends_at' => 'datetime'];
+        return [
+            'trial_ends_at' => 'datetime',
+            'allow_negative_stock' => 'boolean',
+        ];
     }
 
     public function owner()
@@ -64,5 +68,18 @@ class Business extends Model
         $ends = $this->subscription?->ends_at;
 
         return $ends ? max(0, (int) ceil(now()->floatDiffInDays($ends, false))) : 0;
+    }
+
+    public function roleOf(User $user): ?string
+    {
+        return DB::table('business_user')
+            ->where('business_id', $this->id)
+            ->where('user_id', $user->id)
+            ->value('role');
+    }
+
+    public function isManager(User $user): bool
+    {
+        return in_array($this->roleOf($user), ['owner', 'admin'], true);
     }
 }

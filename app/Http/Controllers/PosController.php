@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Order;
 use App\Models\PaymentSetting;
 use App\Models\Product;
+use App\Models\Shift;
 use App\Services\PricingService;
 use App\Services\StockService;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -23,6 +24,16 @@ class PosController extends Controller
         $business = $request->attributes->get('business');
         $wholesale = $business->canUse('wholesale');
 
+        $shift = Shift::with('outlet:id,name')
+            ->where('user_id', auth()->id())
+            ->where('status', 'open')
+            ->first();
+
+        $trackStock = $business->canUse('stock_management');
+        $stocks = ($shift && $trackStock)
+            ? \App\Models\Stock::where('outlet_id', $shift->outlet_id)->pluck('qty', 'product_id')
+            : collect();
+
         $products = Product::with(['units', 'priceTiers'])
             ->where('is_active', true)
             ->orderBy('name')
@@ -36,6 +47,7 @@ class PosController extends Controller
                 'sell_price' => $p->sell_price,
                 'category_id' => $p->category_id,
                 'image_url' => $p->image_url,
+                'stock' => ($trackStock && $p->track_stock) ? (int) ($stocks[$p->id] ?? 0) : null,
                 'units' => $wholesale ? $p->units->map(fn($u) => [
                     'name' => $u->name,
                     'conversion' => $u->conversion,
@@ -54,6 +66,8 @@ class PosController extends Controller
             'categories' => Category::orderBy('name')->get(['id', 'name']),
             'products' => $products,
             'payment_methods' => PaymentSetting::current()->available(),
+            'shift' => $shift?->payload($business->timezone),
+            'allow_negative_stock' => (bool) $business->allow_negative_stock,
         ]);
     }
 
@@ -63,7 +77,7 @@ class PosController extends Controller
 
         $data = $request->validate([
             'id' => ['required', 'uuid'],
-            'outlet_id' => ['required', Rule::exists('outlets', 'id')->where('business_id', $business->id)],
+            'outlet_id' => ['nullable'],
             'items' => ['required', 'array', 'min:1', 'max:100'],
             'items.*.product_id' => ['required', 'uuid'],
             'items.*.unit_name' => ['nullable', 'string', 'max:30'],
@@ -90,6 +104,12 @@ class PosController extends Controller
             ]);
         }
 
+        $shift = Shift::where('user_id', auth()->id())->where('status', 'open')->first();
+        if (! $shift) {
+            throw ValidationException::withMessages(['shift' => 'Kasir belum dibuka. Buka kasir terlebih dahulu.']);
+        }
+        $data['outlet_id'] = $shift->outlet_id; // cabang ditentukan oleh shift, bukan dari browser
+
         // Validasi metode pembayaran terhadap pengaturan bisnis
         $available = collect(PaymentSetting::current()->available())->keyBy('key');
         $payments = [];
@@ -111,7 +131,11 @@ class PosController extends Controller
         }
 
         try {
-            $order = DB::transaction(function () use ($data, $payments, $business, $stock, $pricing) {
+            $order = DB::transaction(function () use ($data, $payments, $business, $stock, $pricing, $shift) {
+                $locked = Shift::whereKey($shift->id)->lockForUpdate()->first();
+                if (! $locked || $locked->status !== 'open') {
+                    throw ValidationException::withMessages(['shift' => 'Kasir sudah ditutup.']);
+                }
                 $wholesale = $business->canUse('wholesale');
                 $trackStock = $business->canUse('stock_management');
 
@@ -179,6 +203,7 @@ class PosController extends Controller
                     'change_amount' => $change,
                     'note' => $data['note'] ?? null,
                     'created_at_client' => $data['created_at_client'] ?? null,
+                    'shift_id' => $shift->id,
                 ]);
 
                 foreach ($lines as $l) {
@@ -190,7 +215,7 @@ class PosController extends Controller
 
                 ksort($stockOut);
                 foreach ($stockOut as $productId => $baseQty) {
-                    $stock->move($data['outlet_id'], $products[$productId], 'sale', -$baseQty, 'Penjualan ' . $order->order_number, 'order', $order->id);
+                    $stock->move($data['outlet_id'], $products[$productId], 'sale', -$baseQty, 'Penjualan ' . $order->order_number, 'order', $order->id, (bool) $business->allow_negative_stock);
                 }
 
                 return $order->load(['items', 'payments', 'outlet', 'cashier']);

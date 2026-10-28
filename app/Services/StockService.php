@@ -6,14 +6,21 @@ use App\Models\Product;
 use App\Models\Stock;
 use App\Models\StockMovement;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class StockService
 {
     /** Ubah stok sebesar $delta (+ masuk, - keluar), dalam satuan dasar. */
-    public function move(string $outletId, Product $product, string $type, int $delta, ?string $note = null, ?string $refType = null, ?string $refId = null): StockMovement
+    public function move(string $outletId, Product $product, string $type, int $delta, ?string $note = null, ?string $refType = null, ?string $refId = null, bool $allowNegative = true): StockMovement
     {
-        return DB::transaction(function () use ($outletId, $product, $type, $delta, $note, $refType, $refId) {
+        return DB::transaction(function () use ($outletId, $product, $type, $delta, $note, $refType, $refId, $allowNegative) {
             $stock = $this->lock($outletId, $product);
+
+            if (! $allowNegative && $stock->qty + $delta < 0) {
+                throw ValidationException::withMessages([
+                    'items' => "Stok {$product->name} tidak cukup (tersisa {$stock->qty} {$product->unit}).",
+                ]);
+            }
 
             return $this->apply($stock, $type, $delta, $note, $refType, $refId);
         });

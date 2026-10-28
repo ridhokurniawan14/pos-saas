@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ReceiptModal from '@/components/ReceiptModal.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { onBeforeUnmount, ref, watch } from 'vue';
 
 const props = defineProps<{
     orders: { data: any[]; links: { url: string | null; label: string; active: boolean }[] };
@@ -18,8 +18,21 @@ const to = ref(props.filters.to);
 const status = ref(props.filters.status ?? '');
 const search = ref(props.filters.search ?? '');
 
+let timer: number | undefined;
+
 const apply = () =>
-    router.get('/orders', { from: from.value, to: to.value, status: status.value || undefined, search: search.value || undefined }, { preserveState: true, replace: true });
+    router.get(
+        '/orders',
+        { from: from.value, to: to.value, status: status.value || undefined, search: search.value || undefined },
+        { preserveState: true, preserveScroll: true, replace: true },
+    );
+
+// Tiap input berubah, tunggu 300 ms lalu muat ulang otomatis
+watch([search, status, from, to], () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(apply, 300);
+});
+onBeforeUnmount(() => clearTimeout(timer));
 
 const iso = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const preset = (days: number | 'month') => {
@@ -27,7 +40,6 @@ const preset = (days: number | 'month') => {
     const start = days === 'month' ? new Date(end.getFullYear(), end.getMonth(), 1) : new Date(end.getTime() - (days as number) * 86400000);
     from.value = iso(start);
     to.value = iso(end);
-    apply();
 };
 
 /* detail + cetak ulang */
@@ -84,11 +96,11 @@ const field =
         </div>
 
         <div class="flex flex-wrap items-end gap-3">
-            <div><label class="mb-1 block text-xs text-neutral-500">Dari</label><input v-model="from" type="date" :class="field" @change="apply" /></div>
-            <div><label class="mb-1 block text-xs text-neutral-500">Sampai</label><input v-model="to" type="date" :class="field" @change="apply" /></div>
+            <div><label class="mb-1 block text-xs text-neutral-500">Dari</label><input v-model="from" type="date" :class="field" /></div>
+            <div><label class="mb-1 block text-xs text-neutral-500">Sampai</label><input v-model="to" type="date" :class="field" /></div>
             <div>
                 <label class="mb-1 block text-xs text-neutral-500">Status</label>
-                <select v-model="status" :class="field" @change="apply">
+                <select v-model="status" :class="field">
                     <option value="">Semua</option>
                     <option value="completed">Selesai</option>
                     <option value="void">Dibatalkan</option>
@@ -96,7 +108,7 @@ const field =
             </div>
             <div class="min-w-40 flex-1">
                 <label class="mb-1 block text-xs text-neutral-500">No. struk</label>
-                <input v-model="search" type="search" placeholder="INV-..." :class="field" class="w-full" @keyup.enter="apply" />
+                <input v-model="search" type="search" placeholder="INV-..." :class="field" class="w-full" />
             </div>
         </div>
 

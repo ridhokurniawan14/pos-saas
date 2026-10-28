@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { onBeforeUnmount, ref, watch } from 'vue';
 
 type Unit = { name: string; conversion: number };
 type Row = { id: string; name: string; sku: string | null; unit: string; stock_qty: number | null; units: Unit[] };
@@ -14,8 +14,17 @@ const props = defineProps<{
 }>();
 
 const search = ref(props.filters.search ?? '');
+let timer: number | undefined;
+
 const go = (outlet = props.outlet_id) =>
-    router.get('/stock', { outlet, search: search.value }, { preserveState: true, replace: true });
+    router.get('/stock', { outlet, search: search.value || undefined }, { preserveState: true, preserveScroll: true, replace: true });
+
+// dropdown cabang (tanpa jeda), ketikan pencarian (jeda 300 ms)
+watch(search, () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(() => go(), 300);
+});
+onBeforeUnmount(() => clearTimeout(timer));
 
 const fmt = (r: Row) => {
     const q = r.stock_qty ?? 0;
@@ -69,9 +78,8 @@ const input =
         <template v-else-if="products">
             <input
                 v-model="search"
-                @keyup.enter="go()"
                 type="search"
-                placeholder="Cari produk lalu tekan Enter"
+                placeholder="Cari produk"
                 :class="input"
             />
 

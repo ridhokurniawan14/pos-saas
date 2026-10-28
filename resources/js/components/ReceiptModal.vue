@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ receipt: any; copy?: boolean }>();
+withDefaults(defineProps<{ receipt: any; copy?: boolean; closeLabel?: string }>(), { closeLabel: 'Tutup' });
 defineEmits<{ close: [] }>();
 
 const rupiah = (n: number) =>
@@ -15,11 +15,14 @@ const print = () => window.print();
                 <div id="receipt" class="rm-receipt">
                     <div v-if="receipt.order.status === 'void'" class="rm-center rm-bold">*** DIBATALKAN ***</div>
                     <div v-if="copy" class="rm-center">*** SALINAN ***</div>
+
                     <div class="rm-center">
+                        <img v-if="receipt.logo_url" :src="receipt.logo_url" alt="" class="rm-logo" />
                         <div class="rm-bold">{{ receipt.business }}</div>
                         <div>{{ receipt.outlet.name }}</div>
-                        <div v-if="receipt.outlet.address">{{ receipt.outlet.address }}</div>
+                        <div v-if="receipt.outlet.address" class="rm-pre">{{ receipt.outlet.address }}</div>
                         <div v-if="receipt.outlet.phone">{{ receipt.outlet.phone }}</div>
+                        <div v-if="receipt.outlet.header" class="rm-pre">{{ receipt.outlet.header }}</div>
                     </div>
                     <hr class="rm-hr" />
                     <div>{{ receipt.order.number }}</div>
@@ -42,13 +45,13 @@ const print = () => window.print();
                     </div>
                     <div class="rm-row"><span>Kembali</span><span>{{ rupiah(receipt.order.change) }}</span></div>
                     <hr class="rm-hr" />
-                    <div class="rm-center">{{ receipt.outlet.footer || 'Terima kasih atas kunjungan Anda' }}</div>
+                    <div class="rm-center rm-pre">{{ receipt.outlet.footer || 'Terima kasih atas kunjungan Anda' }}</div>
                 </div>
 
                 <div class="rm-actions">
                     <button type="button" class="rm-white" @click="print">Cetak Struk</button>
                     <slot />
-                    <button type="button" class="rm-ghost" @click="$emit('close')">Tutup</button>
+                    <button type="button" class="rm-ghost" @click="$emit('close')">{{ closeLabel }}</button>
                 </div>
             </div>
         </div>
@@ -60,7 +63,9 @@ const print = () => window.print();
 .rm-wrap { display: flex; flex-direction: column; gap: 14px; margin: auto; }
 .rm-receipt { width: 302px; margin: 0 auto; padding: 12px; background: #fff; color: #000; font-family: ui-monospace, 'Courier New', monospace; font-size: 12px; line-height: 1.35; }
 .rm-center { text-align: center; }
+.rm-pre { white-space: pre-line; }
 .rm-bold { font-weight: 700; }
+.rm-logo { display: block; margin: 0 auto 6px; max-width: 120px; max-height: 70px; object-fit: contain; filter: grayscale(1) contrast(1.3); }
 .rm-hr { border: 0; border-top: 1px dashed #000; margin: 8px 0; }
 .rm-row { display: flex; justify-content: space-between; gap: 8px; }
 .rm-item { margin-bottom: 4px; }

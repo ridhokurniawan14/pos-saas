@@ -8,6 +8,8 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentSettingController;
 use App\Http\Controllers\PosController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ReceiptSettingController;
+use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\StockController;
 
 Route::inertia('/', 'Welcome')->name('home');
@@ -34,6 +36,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('orders/{id}', [OrderController::class, 'show'])->name('orders.show');
     Route::post('orders/{id}/void', [OrderController::class, 'void'])->name('orders.void');
+
+    Route::get('shifts', [ShiftController::class, 'index'])->name('shifts.index');
+    Route::post('shifts', [ShiftController::class, 'store'])->name('shifts.store');
+    Route::get('shifts/{id}', [ShiftController::class, 'show'])->name('shifts.show');
+    Route::post('shifts/{id}/cash', [ShiftController::class, 'cash'])->name('shifts.cash');
+    Route::post('shifts/{id}/close', [ShiftController::class, 'close'])->name('shifts.close');
+
+    Route::get('receipt-settings', [ReceiptSettingController::class, 'index'])->name('receipt.index');
+    Route::put('receipt-settings/business', [ReceiptSettingController::class, 'business']);
+    Route::put('receipt-settings/outlets/{id}', [ReceiptSettingController::class, 'outlet']);
+    Route::post('receipt-settings/logo', [ReceiptSettingController::class, 'logo']);
+    Route::delete('receipt-settings/logo', [ReceiptSettingController::class, 'destroyLogo']);
 });
 
 Route::middleware('auth')->group(function () {

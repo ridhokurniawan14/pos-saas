@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { onBeforeUnmount, ref, watch } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 
 const props = defineProps<{
@@ -10,7 +10,16 @@ const props = defineProps<{
 }>();
 
 const search = ref(props.filters.search ?? '');
-const doSearch = () => router.get('/products', { search: search.value }, { preserveState: true, replace: true });
+let timer: number | undefined;
+
+watch(search, () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(
+        () => router.get('/products', { search: search.value || undefined }, { preserveState: true, preserveScroll: true, replace: true }),
+        300,
+    );
+});
+onBeforeUnmount(() => clearTimeout(timer));
 
 const rupiah = (n: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
 
@@ -44,9 +53,8 @@ const remove = () => {
 
         <input
             v-model="search"
-            @keyup.enter="doSearch"
             type="search"
-            placeholder="Cari nama, SKU, atau barcode lalu tekan Enter"
+            placeholder="Cari nama, SKU, atau barcode"
             class="w-full rounded-lg border bg-transparent px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-neutral-400 dark:border-neutral-700"
         />
 
