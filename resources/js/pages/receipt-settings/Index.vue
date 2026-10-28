@@ -2,6 +2,7 @@
 import { compressToDataUrl } from '@/lib/image';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { reactive, ref } from 'vue';
+import { compressLogo } from '@/lib/image';
 
 type Outlet = { id: string; name: string; address: string | null; phone: string | null; receipt_header: string | null; receipt_footer: string | null };
 
@@ -34,7 +35,7 @@ const onLogo = async (e: Event) => {
     if (!f) return;
     logoError.value = '';
     try {
-        const url = await compressToDataUrl(f, 400, 'image/png');
+        const url = await compressLogo(f, 384);
         router.post('/receipt-settings/logo', { logo_data: url }, {
             preserveScroll: true,
             onError: (errs) => (logoError.value = Object.values(errs)[0] as string),
