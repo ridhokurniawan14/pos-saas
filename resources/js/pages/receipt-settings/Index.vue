@@ -7,12 +7,12 @@ import { compressLogo } from '@/lib/image';
 type Outlet = { id: string; name: string; address: string | null; phone: string | null; receipt_header: string | null; receipt_footer: string | null };
 
 const props = defineProps<{
-    business: { name: string; allow_negative_stock: boolean; logo_url: string | null };
+    store: { name: string; allow_negative_stock: boolean; logo_url: string | null };
     outlets: Outlet[];
     can_custom: boolean;
 }>();
 
-const biz = useForm({ name: props.business.name, allow_negative_stock: props.business.allow_negative_stock });
+const biz = useForm({ name: props.store.name, allow_negative_stock: props.store.allow_negative_stock });
 const saveBiz = () => biz.put('/receipt-settings/business', { preserveScroll: true });
 
 const forms = reactive<Record<string, any>>({});
@@ -87,15 +87,15 @@ const input =
             </div>
             <div v-if="can_custom" class="flex items-center gap-4">
                 <button type="button" class="flex h-24 w-24 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 border-dashed bg-white dark:border-neutral-700" @click="logoEl?.click()">
-                    <img v-if="business.logo_url" :src="business.logo_url" class="h-full w-full object-contain" />
+                    <img v-if="store.logo_url" :src="store.logo_url" class="h-full w-full object-contain" />
                     <span v-else class="px-2 text-center text-xs text-neutral-500">+ Upload logo</span>
                 </button>
                 <div class="space-y-2">
                     <div class="flex gap-2">
                         <button type="button" class="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800" @click="logoEl?.click()">
-                            {{ business.logo_url ? 'Ganti logo' : 'Pilih logo' }}
+                            {{ store.logo_url ? 'Ganti logo' : 'Pilih logo' }}
                         </button>
-                        <button v-if="business.logo_url" type="button" class="rounded-lg px-3 py-2 text-sm text-red-500 hover:bg-red-500/10" @click="router.delete('/receipt-settings/logo', { preserveScroll: true })">Hapus</button>
+                        <button v-if="store.logo_url" type="button" class="rounded-lg px-3 py-2 text-sm text-red-500 hover:bg-red-500/10" @click="router.delete('/receipt-settings/logo', { preserveScroll: true })">Hapus</button>
                     </div>
                     <p class="text-xs text-neutral-500">Pakai logo hitam putih berlatar putih supaya hasil cetak thermal tajam.</p>
                     <p v-if="logoError" class="text-xs text-red-500">{{ logoError }}</p>

@@ -14,7 +14,7 @@ class ReceiptSettingController extends Controller
         $business = $this->manager($request);
 
         return Inertia::render('receipt-settings/Index', [
-            'business' => [
+            'store' => [
                 'name' => $business->name,
                 'allow_negative_stock' => $business->allow_negative_stock,
                 'logo_url' => $business->receipt_logo_path ? '/storage/' . $business->receipt_logo_path : null,
