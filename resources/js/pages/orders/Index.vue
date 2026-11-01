@@ -3,6 +3,8 @@ import ReceiptModal from '@/components/ReceiptModal.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { onBeforeUnmount, ref, watch } from 'vue';
 
+defineOptions({ layout: { breadcrumbs: [{ title: 'Riwayat Transaksi', href: '/orders' }] } });
+
 const props = defineProps<{
     orders: { data: any[]; links: { url: string | null; label: string; active: boolean }[] };
     filters: { from: string; to: string; status?: string | null; search?: string | null };

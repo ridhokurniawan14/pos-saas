@@ -3,6 +3,8 @@ import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, nextTick, ref } from 'vue';
 import MoneyInput from '@/components/MoneyInput.vue';
 
+defineOptions({ layout: { breadcrumbs: [{ title: 'Produk', href: '/products' }, { title: 'Form', href: '#' }] } });
+
 const props = defineProps<{
     categories: { id: string; name: string }[];
     product: any | null;
@@ -23,6 +25,7 @@ const form = useForm({
     is_active: props.product?.is_active ?? true,
     image_data: null as string | null,
     remove_image: false,
+    min_stock: props.product?.min_stock ?? 0,
     units: (props.product?.units ?? []).map((u: any) => ({
         name: u.name,
         conversion: u.conversion,
@@ -99,6 +102,7 @@ const submit = () => {
         category_id: d.category_id || null,
         units: d.units.map((u) => ({ ...u, sell_price: u.sell_price ?? 0, barcode: u.barcode || null })),
         tiers: d.tiers.map((t) => ({ ...t, price: t.price ?? 0, unit_name: t.unit_name || null })),
+        min_stock: d.min_stock || 0,
     }));
 
     const options = {
@@ -208,6 +212,12 @@ const input =
             </div>
 
             <div class="flex flex-wrap gap-6">
+                <div v-if="form.track_stock">
+                    <label class="mb-1.5 block text-sm font-medium">Stok minimum (peringatan)</label>
+                    <input v-model.number="form.min_stock" type="number" min="0" :class="input" />
+                    <p class="mt-1 text-xs text-neutral-500">Kamu diberi peringatan saat stok sama atau di bawah angka ini. Isi 0 untuk mematikan.</p>
+                    <p v-if="form.errors.min_stock" class="mt-1 text-sm text-red-500">{{ form.errors.min_stock }}</p>
+                </div>
                 <label class="flex items-center gap-2 text-sm"><input v-model="form.track_stock" type="checkbox" /> Lacak stok</label>
                 <label class="flex items-center gap-2 text-sm"><input v-model="form.is_active" type="checkbox" /> Aktif dijual</label>
             </div>

@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use Inertia\Inertia;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -50,6 +51,7 @@ class HandleInertiaRequests extends Middleware
                 }
 
                 $plan = $b->subscription?->plan;
+                $plan?->loadMissing(['features', 'limits']);
 
                 return [
                     'id' => $b->id,
@@ -59,10 +61,32 @@ class HandleInertiaRequests extends Middleware
                     'days_left' => $b->daysLeft(),
                     'ends_at' => $b->subscription?->ends_at?->toDateString(),
                     'read_only' => $b->isReadOnly(),
-                    'features' => $plan?->features()->where('enabled', true)->pluck('feature_key'),
-                    'limits' => $plan?->limits()->pluck('value', 'key'),
+                    'features' => $plan?->features->where('enabled', true)->pluck('feature_key')->values(),
+                    'limits' => $plan?->limits->pluck('value', 'key'),
                 ];
             },
+            // Dimuat belakangan: hanya saat dibutuhkan, tidak memperlambat render halaman
+            'low_stock' => Inertia::optional(function () use ($request) {
+                $b = $request->attributes->get('business');
+
+                if (! $b || ! $b->canUse('stock_management')) {
+                    return null;
+                }
+
+                $rows = \App\Models\Stock::query()
+                    ->join('products', 'products.id', '=', 'stocks.product_id')
+                    ->join('outlets', 'outlets.id', '=', 'stocks.outlet_id')
+                    ->whereNull('products.deleted_at')
+                    ->where('products.track_stock', true)
+                    ->where('products.is_active', true)
+                    ->where('products.min_stock', '>', 0)
+                    ->whereColumn('stocks.qty', '<=', 'products.min_stock')
+                    ->orderBy('stocks.qty')
+                    ->limit(50)
+                    ->get(['products.id', 'products.name', 'products.unit', 'products.min_stock', 'stocks.qty', 'outlets.name as outlet']);
+
+                return ['count' => $rows->count(), 'items' => $rows->take(8)->values()];
+            }),
         ];
     }
 }

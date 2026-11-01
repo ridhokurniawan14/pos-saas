@@ -4,6 +4,8 @@ import { Head, router, useForm } from '@inertiajs/vue3';
 import { reactive, ref } from 'vue';
 import { compressLogo } from '@/lib/image';
 
+defineOptions({ layout: { breadcrumbs: [{ title: 'Pengaturan Toko', href: '/receipt-settings' }] } });
+
 type Outlet = { id: string; name: string; address: string | null; phone: string | null; receipt_header: string | null; receipt_footer: string | null };
 
 const props = defineProps<{

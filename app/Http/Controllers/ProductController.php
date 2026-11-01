@@ -111,6 +111,7 @@ class ProductController extends Controller
             'is_active' => ['boolean'],
             'image_data' => ['nullable', 'string', 'max:4000000'],
             'remove_image' => ['nullable', 'boolean'],
+            'min_stock' => ['nullable', 'integer', 'min:0', 'max:1000000'],
         ]);
     }
 
@@ -128,6 +129,8 @@ class ProductController extends Controller
             Storage::disk('public')->delete($product->image_path);
             $data['image_path'] = null;
         }
+
+        $data['min_stock'] = (int) ($data['min_stock'] ?? 0);
 
         return $data;
     }

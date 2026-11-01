@@ -4,6 +4,8 @@ import { compressToDataUrl } from '@/lib/image';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
+defineOptions({ layout: { breadcrumbs: [{ title: 'Pembayaran', href: '/payment-settings' }] } });
+
 type Bank = { id: string; bank_name: string; account_number: string; account_name: string };
 
 const props = defineProps<{

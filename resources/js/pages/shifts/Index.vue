@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 
+defineOptions({ layout: { breadcrumbs: [{ title: 'Shift', href: '/shifts' }] } });
+
 defineProps<{
     shifts: { data: any[]; links: { url: string | null; label: string; active: boolean }[] };
 }>();

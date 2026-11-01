@@ -11,7 +11,9 @@ import {
     CreditCard, 
     Receipt, 
     Wallet, 
-    Store 
+    Store,
+    PackagePlus, 
+    Truck
 } from '@lucide/vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
@@ -39,6 +41,8 @@ const mainNavItems: NavItem[] = [
     { title: 'Kategori', href: '/categories', icon: Tags },
     { title: 'Produk', href: '/products', icon: Package },
     { title: 'Stok', href: '/stock', icon: Boxes },
+    { title: 'Supplier', href: '/suppliers', icon: Truck },
+    { title: 'Pembelian', href: '/purchases', icon: PackagePlus },
     { title: 'Pembayaran', href: '/payment-settings', icon: CreditCard },
     { title: 'Shift', href: '/shifts', icon: Wallet },
     { title: 'Kasir', href: '/pos', icon: ShoppingCart },

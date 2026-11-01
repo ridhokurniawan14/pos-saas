@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 
+defineOptions({ layout: { breadcrumbs: [{ title: 'Shift', href: '/shifts' }, { title: 'Detail', href: '#' }] } });
+
 defineProps<{ shift: any }>();
 
 const rupiah = (n: number | null) =>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
 import { SidebarTrigger } from '@/components/ui/sidebar';
+import StockBell from '@/components/StockBell.vue';
 import type { BreadcrumbItem } from '@/types';
 
 withDefaults(
@@ -23,5 +24,6 @@ withDefaults(
                 <Breadcrumbs :breadcrumbs="breadcrumbs" />
             </template>
         </div>
+    <StockBell class="ml-auto" />
     </header>
 </template>

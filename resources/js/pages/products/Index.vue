@@ -3,6 +3,8 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import { onBeforeUnmount, ref, watch } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 
+defineOptions({ layout: { breadcrumbs: [{ title: 'Produk', href: '/products' }] } });
+
 const props = defineProps<{
     products: { data: any[]; links: { url: string | null; label: string; active: boolean }[] };
     filters: { search?: string };

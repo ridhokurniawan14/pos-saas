@@ -3,6 +3,8 @@ import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 
+defineOptions({ layout: { breadcrumbs: [{ title: 'Kategori', href: '/categories' }] } });
+
 defineProps<{ categories: { id: string; name: string; products_count: number }[] }>();
 
 const form = useForm({ name: '' });

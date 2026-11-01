@@ -2,8 +2,10 @@
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { onBeforeUnmount, ref, watch } from 'vue';
 
+defineOptions({ layout: { breadcrumbs: [{ title: 'Stok', href: '/stock' }] } });
+
 type Unit = { name: string; conversion: number };
-type Row = { id: string; name: string; sku: string | null; unit: string; stock_qty: number | null; units: Unit[] };
+type Row = { id: string; name: string; sku: string | null; unit: string; stock_qty: number | null; units: Unit[]; min_stock: number };
 
 const props = defineProps<{
     locked: boolean;
@@ -98,7 +100,10 @@ const input =
                                 <p class="font-medium">{{ r.name }}</p>
                                 <p class="text-xs text-neutral-500">{{ r.sku || '-' }}</p>
                             </td>
-                            <td class="px-4 py-3 text-right" :class="(r.stock_qty ?? 0) <= 0 ? 'text-red-500' : ''">{{ fmt(r) }}</td>
+                            <td class="px-4 py-3 text-right" :class="(r.stock_qty ?? 0) <= 0 ? 'text-red-500' : ''">
+                                {{ fmt(r) }}
+                                <span v-if="r.min_stock > 0 && (r.stock_qty ?? 0) <= r.min_stock" class="ml-2 rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-500">Menipis</span>
+                            </td>
                             <td class="px-4 py-3 text-right">
                                 <button class="text-sm font-medium" @click="open(r)">Atur stok</button>
                             </td>
