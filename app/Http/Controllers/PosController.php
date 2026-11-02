@@ -16,6 +16,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use App\Models\PosDraft;
 
 class PosController extends Controller
 {
@@ -28,6 +29,8 @@ class PosController extends Controller
             ->where('user_id', auth()->id())
             ->where('status', 'open')
             ->first();
+
+        PosDraft::where('created_at', '<', now()->subDays(7))->delete();
 
         $trackStock = $business->canUse('stock_management');
         $stocks = ($shift && $trackStock)
@@ -68,6 +71,17 @@ class PosController extends Controller
             'payment_methods' => PaymentSetting::current()->available(),
             'shift' => $shift?->payload($business->timezone),
             'allow_negative_stock' => (bool) $business->allow_negative_stock,
+            'drafts' => $shift
+                ? PosDraft::with('user:id,name')->where('outlet_id', $shift->outlet_id)->latest()->get()->map(fn($d) => [
+                    'id' => $d->id,
+                    'label' => $d->label,
+                    'by' => $d->user?->name,
+                    'time' => $d->created_at->timezone($business->timezone)->format('d/m H:i'),
+                    'items' => $d->items,
+                    'discount_type' => $d->discount_type,
+                    'discount_value' => $d->discount_value,
+                ])->values()
+                : [],
         ]);
     }
 

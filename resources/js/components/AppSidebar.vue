@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import { 
     BookOpen, 
     FolderGit2, 
@@ -31,23 +32,29 @@ import {
 import { dashboard } from '@/routes';
 import type { NavItem } from '@/types';
 
-const mainNavItems: NavItem[] = [
-    {
-        title: 'Dashboard',
-        href: dashboard(),
-        icon: LayoutGrid,
-    },
+type MenuItem = NavItem & { feature?: string };
+
+const allNavItems: MenuItem[] = [
+    { title: 'Dashboard', href: dashboard(), icon: LayoutGrid },
     { title: 'Pengaturan Toko', href: '/receipt-settings', icon: Store },
     { title: 'Kategori', href: '/categories', icon: Tags },
     { title: 'Produk', href: '/products', icon: Package },
     { title: 'Stok', href: '/stock', icon: Boxes },
-    { title: 'Supplier', href: '/suppliers', icon: Truck },
-    { title: 'Pembelian', href: '/purchases', icon: PackagePlus },
+    { title: 'Supplier', href: '/suppliers', icon: Truck, feature: 'stock_management' },
+    { title: 'Pembelian', href: '/purchases', icon: PackagePlus, feature: 'stock_management' },
     { title: 'Pembayaran', href: '/payment-settings', icon: CreditCard },
     { title: 'Shift', href: '/shifts', icon: Wallet },
     { title: 'Kasir', href: '/pos', icon: ShoppingCart },
     { title: 'Riwayat', href: '/orders', icon: Receipt },
 ];
+
+const page = usePage<any>();
+const features = computed<string[]>(() => page.props.business?.features ?? []);
+const mainNavItems = computed(() =>
+    allNavItems.map((i) =>
+        i.feature && !features.value.includes(i.feature) ? { ...i, title: `${i.title} 🔒` } : i,
+    ),
+);
 
 const footerNavItems: NavItem[] = [
     {

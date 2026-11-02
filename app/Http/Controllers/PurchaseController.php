@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\Supplier;
 use App\Services\StockService;
+use App\Support\Locked;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -17,12 +18,28 @@ class PurchaseController extends Controller
 {
     public function index(Request $request)
     {
+        if (! $request->attributes->get('business')->canUse('stock_management')) {
+            return Locked::page('Pembelian Barang');
+        }
         $this->access($request);
+
+        $request->validate([
+            'search' => ['nullable', 'string', 'max:50'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+        ]);
 
         $purchases = Purchase::with('supplier:id,name')
             ->withCount('items')
+            ->when($request->search, fn($q, $s) => $q->where(fn($q) => $q
+                ->where('number', 'ilike', "%{$s}%")
+                ->orWhere('note', 'ilike', "%{$s}%")
+                ->orWhereHas('supplier', fn($q) => $q->where('name', 'ilike', "%{$s}%"))))
+            ->when($request->from, fn($q, $d) => $q->whereDate('purchase_date', '>=', $d))
+            ->when($request->to, fn($q, $d) => $q->whereDate('purchase_date', '<=', $d))
             ->latest('purchase_date')->latest('created_at')
             ->paginate(20)
+            ->withQueryString()
             ->through(fn($p) => [
                 'id' => $p->id,
                 'number' => $p->number,
@@ -32,12 +49,18 @@ class PurchaseController extends Controller
                 'total' => $p->total,
             ]);
 
-        return Inertia::render('purchases/Index', ['purchases' => $purchases]);
+        return Inertia::render('purchases/Index', [
+            'purchases' => $purchases,
+            'filters' => ['search' => $request->search, 'from' => $request->from, 'to' => $request->to],
+        ]);
     }
 
     public function create(Request $request)
     {
         $business = $request->attributes->get('business');
+        if (! $request->attributes->get('business')->canUse('stock_management')) {
+            return Locked::page('Pembelian Barang');
+        }
         $this->access($request);
         $wholesale = $business->canUse('wholesale');
 

@@ -1,14 +1,47 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { onBeforeUnmount, ref, watch } from 'vue';
 
 defineOptions({ layout: { breadcrumbs: [{ title: 'Shift', href: '/shifts' }] } });
 
-defineProps<{
+const props = defineProps<{
     shifts: { data: any[]; links: { url: string | null; label: string; active: boolean }[] };
+    filters: { search?: string | null; status?: string | null; from?: string | null; to?: string | null };
+    manager: boolean;
 }>();
 
 const rupiah = (n: number | null) =>
     n === null || n === undefined ? '-' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
+
+const search = ref(props.filters.search ?? '');
+const status = ref(props.filters.status ?? '');
+const from = ref(props.filters.from ?? '');
+const to = ref(props.filters.to ?? '');
+
+let timer: number | undefined;
+watch([search, status, from, to], () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(
+        () =>
+            router.get(
+                '/shifts',
+                { search: search.value || undefined, status: status.value || undefined, from: from.value || undefined, to: to.value || undefined },
+                { preserveState: true, preserveScroll: true, replace: true },
+            ),
+        300,
+    );
+});
+onBeforeUnmount(() => clearTimeout(timer));
+
+const reset = () => {
+    search.value = '';
+    status.value = '';
+    from.value = '';
+    to.value = '';
+};
+
+const field =
+    'rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-white dark:[color-scheme:dark]';
 </script>
 
 <template>
@@ -18,6 +51,24 @@ const rupiah = (n: number | null) =>
         <div>
             <h1 class="text-xl font-semibold">Riwayat Shift</h1>
             <p class="text-sm text-neutral-500">Catatan buka dan tutup kasir beserta selisih uang.</p>
+        </div>
+
+        <div class="flex flex-wrap items-end gap-3">
+            <div v-if="manager" class="min-w-44 flex-1">
+                <label class="mb-1 block text-xs text-neutral-500">Cari</label>
+                <input v-model="search" type="search" placeholder="Nama kasir atau cabang" :class="field" class="w-full" />
+            </div>
+            <div>
+                <label class="mb-1 block text-xs text-neutral-500">Status</label>
+                <select v-model="status" :class="field">
+                    <option value="">Semua</option>
+                    <option value="open">Berjalan</option>
+                    <option value="closed">Ditutup</option>
+                </select>
+            </div>
+            <div><label class="mb-1 block text-xs text-neutral-500">Dari</label><input v-model="from" type="date" :class="field" /></div>
+            <div><label class="mb-1 block text-xs text-neutral-500">Sampai</label><input v-model="to" type="date" :class="field" /></div>
+            <button v-if="search || status || from || to" type="button" class="rounded-lg border px-4 py-2 text-sm dark:border-neutral-700" @click="reset">Reset</button>
         </div>
 
         <div class="overflow-x-auto rounded-xl border dark:border-neutral-800">
@@ -51,7 +102,9 @@ const rupiah = (n: number | null) =>
                         <td class="px-4 py-3 text-right"><Link :href="`/shifts/${s.id}`" class="font-medium">Lihat</Link></td>
                     </tr>
                     <tr v-if="!shifts.data.length">
-                        <td colspan="7" class="px-4 py-10 text-center text-neutral-500">Belum ada shift.</td>
+                        <td colspan="7" class="px-4 py-10 text-center text-neutral-500">
+                            {{ search || status || from || to ? 'Tidak ada shift yang cocok.' : 'Belum ada shift.' }}
+                        </td>
                     </tr>
                 </tbody>
             </table>
@@ -59,7 +112,7 @@ const rupiah = (n: number | null) =>
 
         <div v-if="shifts.links.length > 3" class="flex flex-wrap gap-1">
             <template v-for="(l, i) in shifts.links" :key="i">
-                <Link v-if="l.url" :href="l.url" class="rounded-md border px-3 py-1.5 text-sm dark:border-neutral-700"
+                <Link v-if="l.url" :href="l.url" preserve-state class="rounded-md border px-3 py-1.5 text-sm dark:border-neutral-700"
                     :class="l.active ? 'bg-black text-white dark:bg-white dark:text-black' : ''" v-html="l.label" />
                 <span v-else class="px-3 py-1.5 text-sm text-neutral-400" v-html="l.label" />
             </template>

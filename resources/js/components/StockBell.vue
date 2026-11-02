@@ -4,20 +4,23 @@ import { Bell } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 const page = usePage<any>();
-const low = computed(() => page.props.low_stock);
+const canStock = computed(() => (page.props.business?.features ?? []).includes('stock_management'));
+const count = computed(() => page.props.low_stock?.count ?? 0);
+const items = computed(() => page.props.low_stock?.items ?? []);
 const open = ref(false);
 const root = ref<HTMLElement | null>(null);
 
-const canStock = computed(() => (page.props.business?.features ?? []).includes('stock_management'));
-const refresh = () => canStock.value && router.reload({ only: ['low_stock'], preserveScroll: true, preserveState: true });
+const refresh = () => {
+    if (canStock.value) router.reload({ only: ['low_stock'], preserveScroll: true, preserveState: true });
+};
 
 const onDoc = (e: MouseEvent) => {
     if (root.value && !root.value.contains(e.target as Node)) open.value = false;
 };
+
 let timer: number | undefined;
 onMounted(() => {
     document.addEventListener('click', onDoc);
-    refresh();
     timer = window.setInterval(refresh, 60000); // segarkan tiap 1 menit
 });
 onBeforeUnmount(() => {
@@ -27,20 +30,20 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div v-if="low" ref="root" class="sb-root">
+    <div v-if="canStock" ref="root" class="sb-root">
         <button type="button" class="sb-btn" aria-label="Notifikasi stok" @click="open = !open">
             <Bell :size="18" />
-            <span v-if="low.count" class="sb-badge">{{ low.count >= 50 ? '50+' : low.count }}</span>
+            <span v-if="count" class="sb-badge">{{ count >= 50 ? '50+' : count }}</span>
         </button>
 
         <div v-if="open" class="sb-menu">
             <div class="sb-head">Stok menipis</div>
-            <p v-if="!low.items.length" class="sb-empty">Semua stok aman 👍</p>
-            <Link v-for="i in low.items" :key="i.id + i.outlet" href="/stock" class="sb-item" @click="open = false">
+            <p v-if="!items.length" class="sb-empty">Semua stok aman 👍</p>
+            <Link v-for="i in items" :key="i.id + i.outlet" href="/stock" class="sb-item" @click="open = false">
                 <span class="sb-name">{{ i.name }}<small>{{ i.outlet }}</small></span>
                 <span :class="i.qty <= 0 ? 'sb-bad' : 'sb-warn'">{{ i.qty <= 0 ? 'Habis' : `${i.qty} ${i.unit}` }}</span>
             </Link>
-            <div v-if="low.items.length" class="sb-foot">
+            <div v-if="items.length" class="sb-foot">
                 <Link href="/stock" @click="open = false">Lihat stok</Link>
                 <Link href="/purchases/create" @click="open = false">Buat pembelian</Link>
             </div>

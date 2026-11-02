@@ -7,6 +7,7 @@ use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentSettingController;
 use App\Http\Controllers\PosController;
+use App\Http\Controllers\PosDraftController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReceiptSettingController;
@@ -53,6 +54,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::resource('suppliers', SupplierController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::resource('purchases', PurchaseController::class)->only(['index', 'create', 'store', 'show']);
+
+    Route::post('pos/drafts', [PosDraftController::class, 'store'])->name('pos.drafts.store');
+    Route::delete('pos/drafts/{id}', [PosDraftController::class, 'destroy'])->name('pos.drafts.destroy');
 });
 
 Route::middleware('auth')->group(function () {

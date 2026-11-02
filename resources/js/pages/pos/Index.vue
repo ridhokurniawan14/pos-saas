@@ -6,6 +6,7 @@ import MoneyInput from '@/components/MoneyInput.vue';
 import ShiftGate from '@/components/ShiftGate.vue';
 import ShiftPanel from '@/components/ShiftPanel.vue';
 import ReceiptModal from '@/components/ReceiptModal.vue';
+import DraftModals from '@/components/DraftModals.vue';
 
 type Unit = { name: string; conversion: number; sell_price: number };
 type Tier = { unit_name: string | null; min_qty: number; price: number };
@@ -26,6 +27,7 @@ const props = defineProps<{
     payment_methods: PayMethod[];
     shift: any | null;
     allow_negative_stock: boolean;
+    drafts: any[];
 }>();
 
 const page = usePage<any>();
@@ -135,6 +137,60 @@ const doClear = () => {
     discountValue.value = null;
     confirmClear.value = false;
     cartOpen.value = false;
+};
+
+const draftMode = ref<'save' | 'list' | null>(null);
+const draftError = ref('');
+const notice = ref('');
+
+const saveDraft = (label: string) => {
+    draftError.value = '';
+    router.post(
+        '/pos/drafts',
+        {
+            label: label || null,
+            items: cart.value.map((l) => ({ product_id: l.product.id, unit_name: l.unit_name || null, qty: l.qty })),
+            discount_type: discountType.value,
+            discount_value: discountValue.value || 0,
+        },
+        {
+            preserveState: true,
+            preserveScroll: true,
+            onSuccess: () => {
+                cart.value = [];
+                discountValue.value = null;
+                draftMode.value = null;
+                cartOpen.value = false;
+            },
+            onError: (e) => (draftError.value = Object.values(e)[0] as string),
+        },
+    );
+};
+
+const resumeDraft = (d: any) => {
+    const wasEmpty = cart.value.length === 0;
+    let missing = 0;
+
+    for (const it of d.items) {
+        const p = props.products.find((x) => x.id === it.product_id);
+        if (!p) {
+            missing++;
+            continue;
+        }
+        const unit = it.unit_name && p.units.some((u) => u.name === it.unit_name) ? it.unit_name : '';
+        const found = cart.value.find((l) => l.product.id === p.id && l.unit_name === unit);
+        if (found) found.qty += it.qty;
+        else cart.value.push({ product: p, unit_name: unit, qty: it.qty });
+    }
+
+    if (wasEmpty) {
+        discountType.value = d.discount_type === 'percent' ? 'percent' : 'rp';
+        discountValue.value = d.discount_value || null;
+    }
+
+    router.delete(`/pos/drafts/${d.id}`, { preserveState: true, preserveScroll: true });
+    draftMode.value = null;
+    notice.value = missing ? `${missing} produk di draft sudah tidak tersedia dan dilewati.` : '';
 };
 
 // Scanner mengirim Enter otomatis: barcode/SKU persis atau hanya 1 hasil -> langsung masuk keranjang
@@ -274,6 +330,9 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
                     <div class="pos-muted pos-xs">Kasir</div>
                 </div>
             </div>
+            <button type="button" class="pos-btn" @click="draftMode = 'list'">
+                Draft<span v-if="drafts.length"> ({{ drafts.length }})</span>
+            </button>
             <div v-if="shift" class="pos-row">
                 <span class="pos-muted pos-xs">{{ shift.outlet_name }}</span>
                 <button type="button" class="pos-btn" @click="panelOpen = true">Kas &amp; Tutup Kasir</button>
@@ -283,6 +342,8 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
         <div v-if="readOnly" class="pos-alert">
             Masa trial/langganan habis. Transaksi baru dinonaktifkan. Upgrade paket untuk melanjutkan.
         </div>
+
+        <div v-if="notice" class="pos-notice" style="border-radius: 0; cursor: pointer" @click="notice = ''">{{ notice }}</div>
 
         <div class="pos-body">
             <!-- Katalog -->
@@ -327,6 +388,7 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
                 <div class="pos-cart-head">
                     <div class="pos-bold">Keranjang <span class="pos-muted pos-normal">({{ itemCount }})</span></div>
                     <div class="pos-row">
+                        <button class="pos-link" :disabled="!cart.length" @click="draftMode = 'save'; draftError = ''">Simpan draft</button>
                         <button class="pos-link pos-danger-text" @click="askClear">Kosongkan</button>
                         <button class="pos-btn pos-mobile-only" @click="cartOpen = false">Tutup</button>
                     </div>
@@ -466,6 +528,16 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
 
         <!-- Struk -->
         <ReceiptModal v-if="receipt" :receipt="receipt" close-label="Transaksi Baru" @close="closeReceipt" />
+
+        <DraftModals
+            :mode="draftMode"
+            :drafts="drafts"
+            :products="products"
+            :error="draftError"
+            @close="draftMode = null"
+            @save="saveDraft"
+            @resume="resumeDraft"
+        />
 
         <ShiftGate v-if="!shift" :outlets="outlets" />
         <ShiftPanel v-if="shift && panelOpen" :shift="shift" @close="panelOpen = false" />

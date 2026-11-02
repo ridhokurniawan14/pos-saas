@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 defineOptions({ layout: { breadcrumbs: [{ title: 'Supplier', href: '/suppliers' }] } });
 
 type Supplier = { id: string; name: string; phone: string | null; address: string | null; purchases_count: number };
-defineProps<{ suppliers: Supplier[] }>();
+const props = defineProps<{ suppliers: Supplier[] }>();
+
+const q = ref('');
+const filtered = computed(() => {
+    const s = q.value.trim().toLowerCase();
+    return s ? props.suppliers.filter((x) => [x.name, x.phone, x.address].some((v) => v?.toLowerCase().includes(s))) : props.suppliers;
+});
 
 const form = useForm({ name: '', phone: '', address: '' });
 const editing = ref<string | null>(null);
@@ -48,11 +54,15 @@ const input =
                 <input v-model="form.phone" placeholder="Telepon (opsional)" :class="input" />
                 <input v-model="form.address" placeholder="Alamat (opsional)" :class="input" />
             </div>
-            <button type="submit" :disabled="form.processing" class="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black">Simpan</button>
+            <div class="flex justify-end">
+                <button type="submit" :disabled="form.processing" class="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black">Simpan</button>
+            </div>
         </form>
 
+        <input v-model="q" type="search" placeholder="Cari nama, telepon, atau alamat" :class="input" />
+        
         <div class="divide-y rounded-xl border dark:divide-neutral-800 dark:border-neutral-800">
-            <div v-for="s in suppliers" :key="s.id" class="px-4 py-3">
+            <div v-for="s in filtered" :key="s.id" class="px-4 py-3">
                 <div v-if="editing === s.id" class="space-y-2">
                     <input v-model="edit.name" :class="input" />
                     <div class="grid gap-2 sm:grid-cols-2">
@@ -60,9 +70,13 @@ const input =
                         <input v-model="edit.address" placeholder="Alamat" :class="input" />
                     </div>
                     <p v-if="edit.errors.name" class="text-sm text-red-500">{{ edit.errors.name }}</p>
-                    <div class="flex gap-3 text-sm">
-                        <button class="font-medium" @click="save(s.id)">Simpan</button>
-                        <button class="text-neutral-500" @click="editing = null">Batal</button>
+                    <div class="flex justify-end gap-2 pt-1">
+                        <button type="button" class="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800" @click="editing = null">
+                            Batal
+                        </button>
+                        <button type="button" :disabled="edit.processing" class="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black" @click="save(s.id)">
+                            Simpan
+                        </button>
                     </div>
                 </div>
                 <div v-else class="flex items-center justify-between gap-3">
@@ -76,7 +90,9 @@ const input =
                     </div>
                 </div>
             </div>
-            <p v-if="!suppliers.length" class="px-4 py-8 text-center text-sm text-neutral-500">Belum ada supplier.</p>
+            <p v-if="!filtered.length" class="px-4 py-8 text-center text-sm text-neutral-500">
+                {{ suppliers.length ? 'Supplier tidak ditemukan.' : 'Belum ada supplier.' }}
+            </p>
         </div>
     </div>
 

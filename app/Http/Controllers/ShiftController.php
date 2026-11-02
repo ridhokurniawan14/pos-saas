@@ -19,10 +19,24 @@ class ShiftController extends Controller
         $manager = $business->isManager($request->user());
         $tz = $business->timezone;
 
+        $request->validate([
+            'search' => ['nullable', 'string', 'max:50'],
+            'status' => ['nullable', 'in:open,closed'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+        ]);
+
         $shifts = Shift::with(['user:id,name', 'outlet:id,name'])
             ->when(! $manager, fn($q) => $q->where('user_id', $request->user()->id))
+            ->when($request->search, fn($q, $s) => $q->where(fn($q) => $q
+                ->whereHas('user', fn($q) => $q->where('name', 'ilike', "%{$s}%"))
+                ->orWhereHas('outlet', fn($q) => $q->where('name', 'ilike', "%{$s}%"))))
+            ->when($request->status, fn($q, $s) => $q->where('status', $s))
+            ->when($request->from, fn($q, $d) => $q->whereDate('opened_at', '>=', $d))
+            ->when($request->to, fn($q, $d) => $q->whereDate('opened_at', '<=', $d))
             ->latest('opened_at')
             ->paginate(20)
+            ->withQueryString()
             ->through(fn($s) => [
                 'id' => $s->id,
                 'cashier' => $s->user?->name,
@@ -34,7 +48,11 @@ class ShiftController extends Controller
                 'status' => $s->status,
             ]);
 
-        return Inertia::render('shifts/Index', ['shifts' => $shifts]);
+        return Inertia::render('shifts/Index', [
+            'shifts' => $shifts,
+            'filters' => ['search' => $request->search, 'status' => $request->status, 'from' => $request->from, 'to' => $request->to],
+            'manager' => $manager,
+        ]);
     }
 
     public function show(Request $request, string $id)

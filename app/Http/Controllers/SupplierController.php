@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Supplier;
+use App\Support\Locked;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -10,6 +11,9 @@ class SupplierController extends Controller
 {
     public function index(Request $request)
     {
+        if (! $request->attributes->get('business')->canUse('stock_management')) {
+            return Locked::page('Supplier');
+        }
         $this->access($request);
 
         return Inertia::render('suppliers/Index', [

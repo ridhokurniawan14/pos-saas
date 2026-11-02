@@ -66,7 +66,7 @@ class HandleInertiaRequests extends Middleware
                 ];
             },
             // Dimuat belakangan: hanya saat dibutuhkan, tidak memperlambat render halaman
-            'low_stock' => Inertia::optional(function () use ($request) {
+            'low_stock' => function () use ($request) {
                 $b = $request->attributes->get('business');
 
                 if (! $b || ! $b->canUse('stock_management')) {
@@ -86,7 +86,7 @@ class HandleInertiaRequests extends Middleware
                     ->get(['products.id', 'products.name', 'products.unit', 'products.min_stock', 'stocks.qty', 'outlets.name as outlet']);
 
                 return ['count' => $rows->count(), 'items' => $rows->take(8)->values()];
-            }),
+            },
         ];
     }
 }
