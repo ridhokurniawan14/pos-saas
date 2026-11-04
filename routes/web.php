@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentSettingController;
@@ -57,6 +58,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('pos/drafts', [PosDraftController::class, 'store'])->name('pos.drafts.store');
     Route::delete('pos/drafts/{id}', [PosDraftController::class, 'destroy'])->name('pos.drafts.destroy');
+
+    Route::get('pos/customers', [CustomerController::class, 'search']);
+    Route::post('pos/customers', [CustomerController::class, 'quick']);
+    Route::resource('customers', CustomerController::class)->only(['index', 'show', 'store', 'update', 'destroy']);
 });
 
 Route::middleware('auth')->group(function () {

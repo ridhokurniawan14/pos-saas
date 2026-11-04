@@ -8,13 +8,14 @@ class ReceiptPayload
 {
     public static function make(Order $o, $business): array
     {
-        $o->loadMissing(['items', 'payments', 'outlet', 'cashier']);
+        $o->loadMissing(['items', 'payments', 'outlet', 'cashier', 'customer']);
         $custom = $business->canUse('custom_receipt');
 
         return [
             'business' => $business->name,
             'logo_url' => $custom && $business->receipt_logo_path ? '/storage/' . $business->receipt_logo_path : null,
             'cashier' => $o->cashier?->name,
+            'customer' => $o->customer?->name,
             'outlet' => [
                 'name' => $o->outlet->name,
                 'address' => $o->outlet->address,

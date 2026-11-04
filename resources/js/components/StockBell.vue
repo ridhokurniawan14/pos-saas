@@ -38,7 +38,7 @@ onBeforeUnmount(() => {
 
         <div v-if="open" class="sb-menu">
             <div class="sb-head">Stok menipis</div>
-            <p v-if="!items.length" class="sb-empty">Semua stok aman 👍</p>
+            <p v-if="!items.length" class="sb-empty">Semua stok aman</p>
             <Link v-for="i in items" :key="i.id + i.outlet" href="/stock" class="sb-item" @click="open = false">
                 <span class="sb-name">{{ i.name }}<small>{{ i.outlet }}</small></span>
                 <span :class="i.qty <= 0 ? 'sb-bad' : 'sb-warn'">{{ i.qty <= 0 ? 'Habis' : `${i.qty} ${i.unit}` }}</span>

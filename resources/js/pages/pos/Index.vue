@@ -2,11 +2,13 @@
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onMounted, ref, watch } from 'vue';
+import { ShoppingCart } from '@lucide/vue';
 import MoneyInput from '@/components/MoneyInput.vue';
 import ShiftGate from '@/components/ShiftGate.vue';
 import ShiftPanel from '@/components/ShiftPanel.vue';
 import ReceiptModal from '@/components/ReceiptModal.vue';
 import DraftModals from '@/components/DraftModals.vue';
+import CustomerPicker from '@/components/CustomerPicker.vue';
 
 type Unit = { name: string; conversion: number; sell_price: number };
 type Tier = { unit_name: string | null; min_qty: number; price: number };
@@ -28,6 +30,7 @@ const props = defineProps<{
     shift: any | null;
     allow_negative_stock: boolean;
     drafts: any[];
+    can_customers: boolean;
 }>();
 
 const page = usePage<any>();
@@ -52,6 +55,7 @@ const panelOpen = ref(false);
 const search = ref('');
 const categoryId = ref<string | null>(null);
 const cart = ref<Line[]>([]);
+const customer = ref<{ id: string; name: string; phone: string | null } | null>(null);
 const discountType = ref<'rp' | 'percent'>('rp');
 const discountValue = ref<number | null>(null);
 
@@ -133,6 +137,7 @@ const askClear = () => {
     if (cart.value.length) confirmClear.value = true;
 };
 const doClear = () => {
+    customer.value = null;
     cart.value = [];
     discountValue.value = null;
     confirmClear.value = false;
@@ -157,6 +162,7 @@ const saveDraft = (label: string) => {
             preserveState: true,
             preserveScroll: true,
             onSuccess: () => {
+                customer.value = null;
                 cart.value = [];
                 discountValue.value = null;
                 draftMode.value = null;
@@ -268,6 +274,7 @@ const checkout = async () => {
                 created_at_client: new Date().toISOString(),
                 discount_type: discountType.value,
                 discount_value: discountValue.value || 0,
+                customer_id: customer.value?.id ?? null,
                 items: cart.value.map((l) => ({
                     product_id: l.product.id,
                     unit_name: l.unit_name || null,
@@ -285,6 +292,7 @@ const checkout = async () => {
 
         if (res.ok) {
             receipt.value = await res.json();
+            customer.value = null;
             cart.value = [];
             discountValue.value = null;
             payOpen.value = false;
@@ -312,9 +320,9 @@ const closeReceipt = () => {
     searchEl.value?.focus();
 };
 
-const printReceipt = () => window.print();
+// const printReceipt = () => window.print();
 
-const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit: 'Debit', transfer: 'Transfer' };
+// const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit: 'Debit', transfer: 'Transfer' };
 </script>
 
 <template>
@@ -330,12 +338,14 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
                     <div class="pos-muted pos-xs">Kasir</div>
                 </div>
             </div>
-            <button type="button" class="pos-btn" @click="draftMode = 'list'">
-                Draft<span v-if="drafts.length"> ({{ drafts.length }})</span>
-            </button>
-            <div v-if="shift" class="pos-row">
-                <span class="pos-muted pos-xs">{{ shift.outlet_name }}</span>
-                <button type="button" class="pos-btn" @click="panelOpen = true">Kas &amp; Tutup Kasir</button>
+            <div class="pos-row">
+                <button type="button" class="pos-btn" @click="draftMode = 'list'">
+                    Draft<span v-if="drafts.length"> ({{ drafts.length }})</span>
+                </button>
+                <template v-if="shift">
+                    <span class="pos-muted pos-xs">{{ shift.outlet_name }}</span>
+                    <button type="button" class="pos-btn" @click="panelOpen = true">Kas &amp; Tutup Kasir</button>
+                </template>
             </div>
         </header>
 
@@ -426,6 +436,7 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
                 </div>
 
                 <div class="pos-summary">
+                    <CustomerPicker v-if="can_customers" v-model="customer" />
                     <div class="pos-between"><span class="pos-muted">Subtotal</span><span>{{ rupiah(subtotal) }}</span></div>
                     <div class="pos-between">
                         <span class="pos-muted">Diskon</span>
@@ -449,7 +460,7 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
 
         <!-- Bar bawah (HP / tablet kecil) -->
         <button class="pos-mbar" @click="cartOpen = true">
-            <span>🛒 {{ itemCount }} item</span>
+            <span class="pos-row"><ShoppingCart :size="18" /> {{ itemCount }} item</span>
             <span class="pos-bold">{{ rupiah(total) }} · Lihat keranjang</span>
         </button>
 

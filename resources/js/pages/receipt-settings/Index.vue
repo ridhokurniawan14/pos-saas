@@ -77,7 +77,7 @@ const input =
                 </span>
             </label>
             <button type="submit" :disabled="biz.processing" class="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black">
-                {{ biz.recentlySuccessful ? 'Tersimpan ✓' : 'Simpan' }}
+                {{ biz.recentlySuccessful ? 'Tersimpan' : 'Simpan' }}
             </button>
         </form>
 
@@ -141,7 +141,7 @@ const input =
             </div>
 
             <button type="submit" :disabled="forms[o.id].processing" class="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black">
-                {{ forms[o.id].recentlySuccessful ? 'Tersimpan ✓' : 'Simpan' }}
+                {{ forms[o.id].recentlySuccessful ? 'Tersimpan' : 'Simpan' }}
             </button>
         </form>
     </div>

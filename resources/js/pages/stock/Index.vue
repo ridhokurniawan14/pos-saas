@@ -72,7 +72,7 @@ const input =
             </select>
         </div>
 
-        <div v-if="locked" class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-6 text-center">
+        <div class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-6 text-center">
             <p class="font-semibold text-amber-700 dark:text-amber-400">Manajemen stok belum tersedia di paket kamu</p>
             <p class="mt-1 text-sm text-neutral-500">Upgrade ke paket Rintis atau di atasnya untuk melacak stok.</p>
         </div>

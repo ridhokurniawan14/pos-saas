@@ -17,6 +17,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use App\Models\PosDraft;
+use App\Models\Customer;
 
 class PosController extends Controller
 {
@@ -71,6 +72,7 @@ class PosController extends Controller
             'payment_methods' => PaymentSetting::current()->available(),
             'shift' => $shift?->payload($business->timezone),
             'allow_negative_stock' => (bool) $business->allow_negative_stock,
+            'can_customers' => $business->canUse('customers'),
             'drafts' => $shift
                 ? PosDraft::with('user:id,name')->where('outlet_id', $shift->outlet_id)->latest()->get()->map(fn($d) => [
                     'id' => $d->id,
@@ -104,6 +106,7 @@ class PosController extends Controller
             'payments.*.bank_account_id' => ['nullable', 'uuid'],
             'note' => ['nullable', 'string', 'max:200'],
             'created_at_client' => ['nullable', 'date'],
+            'customer_id' => ['nullable', 'uuid'],
         ]);
 
         // Idempotensi: order yang sama dikirim ulang -> kembalikan yang sudah ada
@@ -123,6 +126,14 @@ class PosController extends Controller
             throw ValidationException::withMessages(['shift' => 'Kasir belum dibuka. Buka kasir terlebih dahulu.']);
         }
         $data['outlet_id'] = $shift->outlet_id; // cabang ditentukan oleh shift, bukan dari browser
+
+        $customerId = null;
+        if (! empty($data['customer_id']) && $business->canUse('customers')) {
+            $customerId = Customer::whereKey($data['customer_id'])->value('id');
+            if (! $customerId) {
+                throw ValidationException::withMessages(['customer' => 'Pelanggan tidak ditemukan.']);
+            }
+        }
 
         // Validasi metode pembayaran terhadap pengaturan bisnis
         $available = collect(PaymentSetting::current()->available())->keyBy('key');
@@ -145,7 +156,7 @@ class PosController extends Controller
         }
 
         try {
-            $order = DB::transaction(function () use ($data, $payments, $business, $stock, $pricing, $shift) {
+            $order = DB::transaction(function () use ($data, $payments, $business, $stock, $pricing, $shift, $customerId) {
                 $locked = Shift::whereKey($shift->id)->lockForUpdate()->first();
                 if (! $locked || $locked->status !== 'open') {
                     throw ValidationException::withMessages(['shift' => 'Kasir sudah ditutup.']);
@@ -218,6 +229,7 @@ class PosController extends Controller
                     'note' => $data['note'] ?? null,
                     'created_at_client' => $data['created_at_client'] ?? null,
                     'shift_id' => $shift->id,
+                    'customer_id' => $customerId,
                 ]);
 
                 foreach ($lines as $l) {

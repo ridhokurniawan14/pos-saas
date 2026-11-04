@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/sidebar';
 import { useCurrentUrl } from '@/composables/useCurrentUrl';
 import type { NavItem } from '@/types';
+import { Lock } from '@lucide/vue';
 
 defineProps<{
     items: NavItem[];
@@ -30,6 +31,7 @@ const { isCurrentUrl } = useCurrentUrl();
                     <Link :href="item.href">
                         <component :is="item.icon" />
                         <span>{{ item.title }}</span>
+                        <Lock v-if="item.locked" class="ml-auto size-3.5! shrink-0 opacity-60 group-data-[collapsible=icon]:hidden" />
                     </Link>
                 </SidebarMenuButton>
             </SidebarMenuItem>

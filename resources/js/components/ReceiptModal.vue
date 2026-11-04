@@ -27,6 +27,7 @@ const print = () => window.print();
                     <hr class="rm-hr" />
                     <div>{{ receipt.order.number }}</div>
                     <div>{{ receipt.order.date }} · {{ receipt.cashier }}</div>
+                    <div v-if="receipt.customer">Pelanggan: {{ receipt.customer }}</div>
                     <hr class="rm-hr" />
                     <div v-for="(it, i) in receipt.order.items" :key="i" class="rm-item">
                         <div>{{ it.name }}</div>

@@ -8,12 +8,17 @@ use App\Services\StockService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
+use App\Support\Locked;
 
 class StockController extends Controller
 {
     public function index(Request $request)
     {
         $business = $request->attributes->get('business');
+        if (! $business->canUse('stock_management')) {
+            return Locked::page('Manajemen Stok');
+        }
+        
         $outlets = $business->outlets()->orderBy('created_at')->get(['id', 'name']);
         $outlet = $outlets->firstWhere('id', $request->outlet) ?? $outlets->first();
 
