@@ -21,6 +21,7 @@ class Business extends Model
         return [
             'trial_ends_at' => 'datetime',
             'allow_negative_stock' => 'boolean',
+            'loyalty_enabled' => 'boolean',
         ];
     }
 

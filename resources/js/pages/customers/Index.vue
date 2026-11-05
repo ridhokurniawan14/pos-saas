@@ -5,12 +5,13 @@ import { onBeforeUnmount, ref, watch } from 'vue';
 
 defineOptions({ layout: { breadcrumbs: [{ title: 'Pelanggan', href: '/customers' }] } });
 
-type Customer = { id: string; name: string; phone: string | null; address: string | null; orders_count: number; total_spent: number };
+type Customer = { id: string; name: string; phone: string | null; address: string | null; orders_count: number; total_spent: number; debt: number; points: number; };
 
 const props = defineProps<{
     customers: { data: Customer[]; links: { url: string | null; label: string; active: boolean }[] };
     filters: { search?: string | null };
     manager: boolean;
+    can: { receivable: boolean; loyalty: boolean };
 }>();
 
 const rupiah = (n: number) =>
@@ -106,6 +107,8 @@ const input =
                         <p class="text-sm font-medium">{{ c.name }}</p>
                         <p class="text-xs text-neutral-500">{{ [c.phone, c.address].filter(Boolean).join(' · ') || '-' }}</p>
                         <p class="text-xs text-neutral-500">{{ c.orders_count }} transaksi · total belanja {{ rupiah(c.total_spent) }}</p>
+                        <p v-if="can.receivable && c.debt > 0" class="text-xs font-medium text-red-500">Piutang {{ rupiah(c.debt) }}</p>
+                        <p v-if="can.loyalty" class="text-xs text-neutral-500">{{ c.points }} poin</p>
                     </div>
                     <div class="flex gap-3 text-sm">
                         <Link :href="`/customers/${c.id}`" class="font-medium">Riwayat</Link>

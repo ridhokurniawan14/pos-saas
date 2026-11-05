@@ -77,7 +77,7 @@ const input =
             <p class="mt-1 text-sm text-neutral-500">Upgrade ke paket Rintis atau di atasnya untuk melacak stok.</p>
         </div>
 
-        <template v-else-if="products">
+        <template v-if="products">
             <input
                 v-model="search"
                 type="search"

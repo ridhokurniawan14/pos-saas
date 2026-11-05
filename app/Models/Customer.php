@@ -17,4 +17,12 @@ class Customer extends Model
     {
         return $this->hasMany(Order::class);
     }
+    public function receivablePayments()
+    {
+        return $this->hasMany(ReceivablePayment::class);
+    }
+    public function pointMovements()
+    {
+        return $this->hasMany(PointMovement::class);
+    }
 }

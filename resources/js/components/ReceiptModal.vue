@@ -12,6 +12,12 @@ const print = () => window.print();
     <Teleport to="body">
         <div class="rm-overlay" @click.self="$emit('close')">
             <div class="rm-wrap">
+                <div v-if="receipt.order.status === 'void'" class="rm-void">
+                    <strong>Transaksi dibatalkan</strong>
+                    <span v-if="receipt.order.voided_at"> pada {{ receipt.order.voided_at }}</span>
+                    <span v-if="receipt.order.voided_by"> oleh {{ receipt.order.voided_by }}</span>
+                    <div>Alasan: {{ receipt.order.void_reason || '-' }}</div>
+                </div>
                 <div id="receipt" class="rm-receipt">
                     <div v-if="receipt.order.status === 'void'" class="rm-center rm-bold">*** DIBATALKAN ***</div>
                     <div v-if="copy" class="rm-center">*** SALINAN ***</div>
@@ -39,12 +45,23 @@ const print = () => window.print();
                     <hr class="rm-hr" />
                     <div class="rm-row"><span>Subtotal</span><span>{{ rupiah(receipt.order.subtotal) }}</span></div>
                     <div v-if="receipt.order.discount" class="rm-row"><span>Diskon</span><span>-{{ rupiah(receipt.order.discount) }}</span></div>
+                    <div v-if="receipt.order.points_discount" class="rm-row">
+                        <span>Tukar {{ receipt.order.points_used }} poin</span><span>-{{ rupiah(receipt.order.points_discount) }}</span>
+                    </div>
                     <div class="rm-row rm-bold"><span>TOTAL</span><span>{{ rupiah(receipt.order.total) }}</span></div>
                     <div v-for="(p, i) in receipt.order.payments" :key="i">
                         <div class="rm-row"><span>{{ methodLabel[p.method] ?? p.method }}</span><span>{{ rupiah(p.amount) }}</span></div>
                         <div v-if="p.ref">{{ p.ref }}</div>
                     </div>
-                    <div class="rm-row"><span>Kembali</span><span>{{ rupiah(receipt.order.change) }}</span></div>
+                    <div v-if="!receipt.order.due" class="rm-row"><span>Kembali</span><span>{{ rupiah(receipt.order.change) }}</span></div>
+                    <template v-else>
+                        <div class="rm-row rm-bold"><span>SISA BON</span><span>{{ rupiah(receipt.order.due) }}</span></div>
+                        <div class="rm-center rm-bold">*** BELUM LUNAS ***</div>
+                    </template>
+                    <div v-if="receipt.order.points_earned || receipt.order.points_balance !== null" class="rm-center" style="margin-top: 4px">
+                        <span v-if="receipt.order.points_earned">Poin didapat: +{{ receipt.order.points_earned }}. </span>
+                        <span v-if="receipt.order.points_balance !== null">Saldo poin: {{ receipt.order.points_balance }}</span>
+                    </div>
                     <hr class="rm-hr" />
                     <div class="rm-center rm-pre">{{ receipt.outlet.footer || 'Terima kasih atas kunjungan Anda' }}</div>
                 </div>
@@ -75,6 +92,7 @@ const print = () => window.print();
 .rm-white { border: 0; background: #fff; color: #000; }
 .rm-ghost { border: 1px solid rgba(255, 255, 255, 0.4); background: transparent; color: #fff; }
 .rm-danger { border: 0; background: #dc2626; color: #fff; }
+.rm-void { width: 302px; margin: 0 auto; padding: 10px 12px; border-radius: 10px; background: #fee2e2; color: #991b1b; font-size: 13px; line-height: 1.4; }
 
 @media print {
     body * { visibility: hidden !important; }

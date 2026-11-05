@@ -71,6 +71,7 @@ const doClose = () => {
                 <div class="sp-card">
                     <div class="sp-row"><span>Modal awal</span><span>{{ rupiah(shift.opening_cash) }}</span></div>
                     <div class="sp-row"><span>Penjualan tunai</span><span>{{ rupiah(shift.cash_sales) }}</span></div>
+                    <div v-if="shift.receivable_cash" class="sp-row"><span>Pelunasan bon (tunai)</span><span>+{{ rupiah(shift.receivable_cash) }}</span></div>
                     <div class="sp-row"><span>Kas masuk</span><span>+{{ rupiah(shift.cash_in) }}</span></div>
                     <div class="sp-row"><span>Kas keluar</span><span>-{{ rupiah(shift.cash_out) }}</span></div>
                     <div class="sp-row sp-bold sp-line"><span>Uang seharusnya di laci</span><span>{{ rupiah(shift.expected_cash) }}</span></div>
@@ -79,6 +80,7 @@ const doClose = () => {
                 <div class="sp-card">
                     <div class="sp-row"><span>Transaksi</span><span>{{ shift.orders_count }}</span></div>
                     <div class="sp-row"><span>Total penjualan</span><span>{{ rupiah(shift.sales_total) }}</span></div>
+                    <div v-if="shift.credit_total" class="sp-row sp-muted"><span>· Dari bon (belum dibayar)</span><span>{{ rupiah(shift.credit_total) }}</span></div>
                     <div v-for="(v, k) in shift.methods" :key="k" class="sp-row sp-muted">
                         <span>· {{ methodLabel[k as string] ?? k }}</span><span>{{ rupiah(v as number) }}</span>
                     </div>

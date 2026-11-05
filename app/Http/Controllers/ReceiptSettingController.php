@@ -22,6 +22,13 @@ class ReceiptSettingController extends Controller
             'outlets' => $business->outlets()->orderBy('created_at')
                 ->get(['id', 'name', 'address', 'phone', 'receipt_header', 'receipt_footer']),
             'can_custom' => $business->canUse('custom_receipt'),
+            'loyalty' => [
+                'loyalty_enabled' => (bool) $business->loyalty_enabled,
+                'loyalty_earn_per' => (int) $business->loyalty_earn_per,
+                'loyalty_point_value' => (int) $business->loyalty_point_value,
+                'loyalty_min_redeem' => (int) $business->loyalty_min_redeem,
+            ],
+            'can_loyalty' => $business->canUse('loyalty'),
         ]);
     }
 
@@ -94,5 +101,21 @@ class ReceiptSettingController extends Controller
         abort_unless($business->isManager($request->user()), 403, 'Hanya owner/admin yang boleh mengubah pengaturan toko.');
 
         return $business;
+    }
+    public function loyalty(Request $request)
+    {
+        $business = $this->manager($request);
+        abort_unless($business->canUse('loyalty'), 403, 'Poin loyalty tersedia mulai paket Sultan.');
+
+        $data = $request->validate([
+            'loyalty_enabled' => ['required', 'boolean'],
+            'loyalty_earn_per' => ['required', 'integer', 'min:100', 'max:100000000'],
+            'loyalty_point_value' => ['required', 'integer', 'min:1', 'max:10000000'],
+            'loyalty_min_redeem' => ['required', 'integer', 'min:1', 'max:1000000'],
+        ]);
+
+        $business->update($data);
+
+        return back();
     }
 }

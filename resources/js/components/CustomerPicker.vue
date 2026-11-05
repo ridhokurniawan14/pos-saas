@@ -2,7 +2,7 @@
 import { UserRound, X } from '@lucide/vue';
 import { onBeforeUnmount, ref, watch } from 'vue';
 
-type C = { id: string; name: string; phone: string | null };
+type C = { id: string; name: string; phone: string | null; points?: number };
 
 defineProps<{ modelValue: C | null }>();
 const emit = defineEmits<{ 'update:modelValue': [c: C | null] }>();
@@ -86,6 +86,7 @@ const create = async () => {
                 <UserRound :size="16" />
                 <span class="cp-name">{{ modelValue.name }}</span>
                 <span v-if="modelValue.phone" class="cp-muted">{{ modelValue.phone }}</span>
+                <span v-if="modelValue.points" class="cp-muted">{{ modelValue.points }} poin</span>
             </div>
             <button type="button" class="cp-link" @click="openPicker">Ganti</button>
             <button type="button" class="cp-icon" aria-label="Hapus pelanggan" @click="emit('update:modelValue', null)"><X :size="16" /></button>

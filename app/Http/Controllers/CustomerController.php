@@ -8,6 +8,8 @@ use App\Support\Locked;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
+use App\Models\PointMovement;
+use App\Models\ReceivablePayment;
 
 class CustomerController extends Controller
 {
@@ -25,6 +27,8 @@ class CustomerController extends Controller
         $customers = Customer::query()
             ->withCount(['orders as orders_count' => $done])
             ->withSum(['orders as total_spent' => $done], 'total')
+            ->withSum(['orders as due_total' => $done], 'due_amount')
+            ->withSum('receivablePayments as repaid', 'amount')
             ->when($request->search, fn($q, $s) => $q->where(fn($q) => $q
                 ->where('name', 'ilike', "%{$s}%")
                 ->orWhere('phone', 'ilike', "%{$s}%")))
@@ -38,12 +42,18 @@ class CustomerController extends Controller
                 'address' => $c->address,
                 'orders_count' => (int) $c->orders_count,
                 'total_spent' => (int) $c->total_spent,
+                'debt' => max(0, (int) $c->due_total - (int) $c->repaid),
+                'points' => (int) $c->points,
             ]);
 
         return Inertia::render('customers/Index', [
             'customers' => $customers,
             'filters' => ['search' => $request->search],
             'manager' => $business->isManager($request->user()),
+            'can' => [
+                'receivable' => $business->canUse('receivable'),
+                'loyalty' => $business->canUse('loyalty') && $business->loyalty_enabled,
+            ],
         ]);
     }
 
@@ -55,26 +65,104 @@ class CustomerController extends Controller
         }
         $this->guard($request);
 
+        $tz = $business->timezone;
+        $canReceivable = $business->canUse('receivable');
+        $canLoyalty = $business->canUse('loyalty') && $business->loyalty_enabled;
+
         $c = Customer::findOrFail($id);
         $done = Order::where('customer_id', $c->id)->where('status', 'completed');
 
-        $orders = Order::where('customer_id', $c->id)->latest()->limit(30)->get(['id', 'order_number', 'total', 'status', 'created_at']);
+        $orders = Order::where('customer_id', $c->id)->latest()->limit(30)
+            ->get(['id', 'order_number', 'total', 'due_amount', 'status', 'created_at']);
+
+        $unpaid = collect();
+        $payments = collect();
+        if ($canReceivable) {
+            $repaid = ReceivablePayment::where('customer_id', $c->id)
+                ->selectRaw('order_id, SUM(amount) as s')->groupBy('order_id')->pluck('s', 'order_id');
+
+            $unpaid = Order::where('customer_id', $c->id)->where('status', 'completed')->where('due_amount', '>', 0)
+                ->orderBy('created_at')->get(['id', 'order_number', 'total', 'due_amount', 'created_at'])
+                ->map(fn($o) => [
+                    'id' => $o->id,
+                    'number' => $o->order_number,
+                    'date' => $o->created_at->timezone($tz)->format('d/m/Y'),
+                    'total' => $o->total,
+                    'remaining' => max(0, $o->due_amount - (int) ($repaid[$o->id] ?? 0)),
+                ])->filter(fn($o) => $o['remaining'] > 0)->values();
+
+            $payments = ReceivablePayment::where('customer_id', $c->id)
+                ->selectRaw('batch_id, MAX(method) as method, SUM(amount) as total, MAX(created_at) as at, MAX(note) as note')
+                ->groupBy('batch_id')->orderByDesc('at')->limit(20)->get()
+                ->map(fn($p) => [
+                    'batch_id' => $p->batch_id,
+                    'method' => $p->method,
+                    'total' => (int) $p->total,
+                    'at' => \Illuminate\Support\Carbon::parse($p->at)->timezone($tz)->format('d/m/Y H:i'),
+                    'note' => $p->note,
+                ])->values();
+        }
+
+        $pointMoves = $canLoyalty
+            ? PointMovement::where('customer_id', $c->id)->latest('created_at')->limit(20)
+            ->get(['type', 'points', 'balance_after', 'note', 'created_at'])
+            ->map(fn($m) => [
+                'type' => $m->type,
+                'points' => $m->points,
+                'balance_after' => $m->balance_after,
+                'note' => $m->note,
+                'at' => $m->created_at->timezone($tz)->format('d/m/Y H:i'),
+            ])->values()
+            : collect();
 
         return Inertia::render('customers/Show', [
             'customer' => $c->only('id', 'name', 'phone', 'address'),
+            'can' => ['receivable' => $canReceivable, 'loyalty' => $canLoyalty],
             'stats' => [
                 'count' => (clone $done)->count(),
                 'total' => (int) (clone $done)->sum('total'),
-                'last' => (clone $done)->latest()->first()?->created_at?->timezone($business->timezone)->format('d/m/Y'),
+                'last' => (clone $done)->latest()->first()?->created_at?->timezone($tz)->format('d/m/Y'),
+                'debt' => (int) $unpaid->sum('remaining'),
+                'points' => (int) $c->points,
             ],
+            'unpaid' => $unpaid,
+            'payments' => $payments,
+            'point_moves' => $pointMoves,
             'orders' => $orders->map(fn($o) => [
                 'id' => $o->id,
                 'number' => $o->order_number,
-                'date' => $o->created_at->timezone($business->timezone)->format('d/m/Y H:i'),
+                'date' => $o->created_at->timezone($tz)->format('d/m/Y H:i'),
                 'total' => $o->total,
+                'due' => $o->due_amount,
                 'status' => $o->status,
             ])->values(),
         ]);
+    }
+
+    /** Pencarian untuk kasir (JSON). */
+    public function search(Request $request)
+    {
+        $this->guard($request);
+        $s = trim((string) $request->query('search', ''));
+
+        $rows = Customer::query()
+            ->when($s, fn($q) => $q->where(fn($q) => $q
+                ->where('name', 'ilike', "%{$s}%")
+                ->orWhere('phone', 'ilike', "%{$s}%")))
+            ->orderBy($s ? 'name' : 'created_at', $s ? 'asc' : 'desc')
+            ->limit(30)
+            ->get(['id', 'name', 'phone', 'points']);
+
+        return response()->json($rows);
+    }
+
+    /** Tambah cepat dari kasir (JSON). */
+    public function quick(Request $request)
+    {
+        $this->guard($request);
+        $c = Customer::create($this->rules($request));
+
+        return response()->json([...$c->only('id', 'name', 'phone'), 'points' => 0]);
     }
 
     public function store(Request $request)
@@ -100,32 +188,6 @@ class CustomerController extends Controller
         Customer::findOrFail($id)->delete();
 
         return back();
-    }
-
-    /** Pencarian untuk kasir (JSON). */
-    public function search(Request $request)
-    {
-        $this->guard($request);
-        $s = trim((string) $request->query('search', ''));
-
-        $rows = Customer::query()
-            ->when($s, fn($q) => $q->where(fn($q) => $q
-                ->where('name', 'ilike', "%{$s}%")
-                ->orWhere('phone', 'ilike', "%{$s}%")))
-            ->orderBy($s ? 'name' : 'created_at', $s ? 'asc' : 'desc')
-            ->limit(8)
-            ->get(['id', 'name', 'phone']);
-
-        return response()->json($rows);
-    }
-
-    /** Tambah cepat dari kasir (JSON). */
-    public function quick(Request $request)
-    {
-        $this->guard($request);
-        $c = Customer::create($this->rules($request));
-
-        return response()->json($c->only('id', 'name', 'phone'));
     }
 
     private function rules(Request $request, ?string $ignoreId = null): array

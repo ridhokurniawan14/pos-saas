@@ -40,4 +40,8 @@ class Order extends Model
     {
         return $this->belongsTo(Customer::class)->withTrashed();
     }
+    public function voider()
+    {
+        return $this->belongsTo(User::class, 'voided_by');
+    }
 }

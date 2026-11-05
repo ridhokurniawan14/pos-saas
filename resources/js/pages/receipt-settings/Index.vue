@@ -3,6 +3,7 @@ import { compressToDataUrl } from '@/lib/image';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { reactive, ref } from 'vue';
 import { compressLogo } from '@/lib/image';
+import MoneyInput from '@/components/MoneyInput.vue';
 
 defineOptions({ layout: { breadcrumbs: [{ title: 'Pengaturan Toko', href: '/receipt-settings' }] } });
 
@@ -12,7 +13,12 @@ const props = defineProps<{
     store: { name: string; allow_negative_stock: boolean; logo_url: string | null };
     outlets: Outlet[];
     can_custom: boolean;
+    loyalty: { loyalty_enabled: boolean; loyalty_earn_per: number; loyalty_point_value: number; loyalty_min_redeem: number };
+    can_loyalty: boolean;
 }>();
+
+const loy = useForm({ ...props.loyalty });
+const saveLoy = () => loy.put('/receipt-settings/loyalty', { preserveScroll: true });
 
 const biz = useForm({ name: props.store.name, allow_negative_stock: props.store.allow_negative_stock });
 const saveBiz = () => biz.put('/receipt-settings/business', { preserveScroll: true });
@@ -107,6 +113,52 @@ const input =
             <p v-else class="text-sm text-neutral-500">Upgrade ke paket Tumbuh untuk menampilkan logo di struk.</p>
         </div>
 
+        <!-- Poin loyalty -->
+        <form class="space-y-4 rounded-xl border p-4 dark:border-neutral-800" @submit.prevent="saveLoy">
+            <div class="flex items-center justify-between">
+                <h2 class="font-semibold">Poin loyalty</h2>
+                <span v-if="!can_loyalty" class="rounded-full bg-amber-500/15 px-3 py-1 text-xs font-medium text-amber-600">Paket Sultan</span>
+            </div>
+
+            <template v-if="can_loyalty">
+                <label class="flex cursor-pointer items-start gap-3 text-sm">
+                    <input v-model="loy.loyalty_enabled" type="checkbox" class="mt-1" />
+                    <span>
+                        <span class="font-medium">Aktifkan poin untuk pelanggan</span>
+                        <span class="block text-neutral-500">Pelanggan yang dipilih di kasir otomatis mengumpulkan poin dan bisa menukarnya.</span>
+                    </span>
+                </label>
+
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <div>
+                        <label class="mb-1.5 block text-sm font-medium">Belanja per 1 poin (Rp)</label>
+                        <MoneyInput v-model="loy.loyalty_earn_per" :class="input" />
+                    </div>
+                    <div>
+                        <label class="mb-1.5 block text-sm font-medium">Nilai 1 poin (Rp)</label>
+                        <MoneyInput v-model="loy.loyalty_point_value" :class="input" />
+                    </div>
+                    <div>
+                        <label class="mb-1.5 block text-sm font-medium">Minimal tukar (poin)</label>
+                        <input v-model.number="loy.loyalty_min_redeem" type="number" min="1" :class="input" />
+                    </div>
+                </div>
+
+                <p class="text-xs text-neutral-500">
+                    Contoh: belanja Rp {{ new Intl.NumberFormat('id-ID').format(loy.loyalty_earn_per || 0) }} mendapat 1 poin,
+                    dan 1 poin ditukar menjadi potongan Rp {{ new Intl.NumberFormat('id-ID').format(loy.loyalty_point_value || 0) }}.
+                </p>
+                <p v-if="Object.keys(loy.errors).length" class="text-sm text-red-500">{{ Object.values(loy.errors)[0] }}</p>
+
+                <div class="flex justify-end">
+                    <button type="submit" :disabled="loy.processing" class="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black">
+                        {{ loy.recentlySuccessful ? 'Tersimpan' : 'Simpan' }}
+                    </button>
+                </div>
+            </template>
+            <p v-else class="text-sm text-neutral-500">Upgrade ke paket Sultan untuk memberi poin loyalty kepada pelanggan.</p>
+        </form>
+        
         <!-- Cabang -->
         <form v-for="o in outlets" :key="o.id" class="space-y-4 rounded-xl border p-4 dark:border-neutral-800" @submit.prevent="saveOutlet(o.id)">
             <h2 class="font-semibold">Struk cabang: {{ o.name }}</h2>

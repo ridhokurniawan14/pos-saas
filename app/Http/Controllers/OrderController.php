@@ -12,6 +12,8 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use App\Models\ReceivablePayment;
+use App\Services\PointService;
 
 class OrderController extends Controller
 {
@@ -29,19 +31,19 @@ class OrderController extends Controller
         $to = $request->input('to', $from);
 
         $base = Order::query()
-            ->when(! $manager, fn ($q) => $q->where('cashier_id', $request->user()->id))
+            ->when(! $manager, fn($q) => $q->where('cashier_id', $request->user()->id))
             ->whereBetween('created_at', [Carbon::parse($from)->startOfDay(), Carbon::parse($to)->endOfDay()])
-            ->when($request->status, fn ($q, $s) => $q->where('status', $s))
-            ->when($request->search, fn ($q, $s) => $q->where('order_number', 'ilike', "%{$s}%"));
+            ->when($request->status, fn($q, $s) => $q->where('status', $s))
+            ->when($request->search, fn($q, $s) => $q->where('order_number', 'ilike', "%{$s}%"));
 
         $done = (clone $base)->where('status', 'completed');
 
         $orders = (clone $base)
-            ->with(['cashier:id,name', 'payments:id,order_id,method'])
+            ->with(['cashier:id,name', 'payments:id,order_id,method', 'voider:id,name'])
             ->latest()
             ->paginate(20)
             ->withQueryString()
-            ->through(fn ($o) => [
+            ->through(fn($o) => [
                 'id' => $o->id,
                 'number' => $o->order_number,
                 'time' => $o->created_at->format('d/m H:i'),
@@ -49,6 +51,9 @@ class OrderController extends Controller
                 'total' => $o->total,
                 'status' => $o->status,
                 'methods' => $o->payments->pluck('method')->unique()->values(),
+                'void_reason' => $o->void_reason,
+                'voided_by' => $o->voider?->name,
+                'due' => $o->due_amount,
             ]);
 
         return Inertia::render('orders/Index', [
@@ -72,17 +77,21 @@ class OrderController extends Controller
         ]);
     }
 
-    public function void(Request $request, string $id, StockService $stock)
+    public function void(Request $request, string $id, StockService $stock, PointService $points)
     {
         abort_unless($this->isManager($request), 403, 'Hanya owner/admin yang boleh membatalkan transaksi.');
 
         $data = $request->validate(['reason' => ['required', 'string', 'max:200']]);
 
-        DB::transaction(function () use ($id, $data, $stock) {
+        DB::transaction(function () use ($id, $data, $stock, $points) {
             $order = Order::whereKey($id)->lockForUpdate()->firstOrFail();
 
             if ($order->status !== 'completed') {
                 throw ValidationException::withMessages(['void' => 'Transaksi ini sudah dibatalkan.']);
+            }
+
+            if (ReceivablePayment::where('order_id', $order->id)->exists()) {
+                throw ValidationException::withMessages(['void' => 'Transaksi bon ini sudah ada pembayaran cicilan, tidak bisa dibatalkan.']);
             }
 
             $order->update([
@@ -103,6 +112,16 @@ class OrderController extends Controller
                 $product = Product::withTrashed()->find($m->product_id);
                 if ($product) {
                     $stock->move($m->outlet_id, $product, 'return', -$m->qty, 'Batal ' . $order->order_number, 'order', $order->id);
+                }
+            }
+
+            // Kembalikan poin yang dipakai, tarik poin yang didapat
+            if ($order->customer_id) {
+                if ($order->points_used > 0) {
+                    $points->adjust($order->customer_id, $order->points_used, 'reverse', $order->id, 'Batal ' . $order->order_number);
+                }
+                if ($order->points_earned > 0) {
+                    $points->adjust($order->customer_id, -$order->points_earned, 'reverse', $order->id, 'Batal ' . $order->order_number);
                 }
             }
         });

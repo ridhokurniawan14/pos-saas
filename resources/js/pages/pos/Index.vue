@@ -31,6 +31,8 @@ const props = defineProps<{
     allow_negative_stock: boolean;
     drafts: any[];
     can_customers: boolean;
+    can_credit: boolean;
+    loyalty: { enabled: boolean; earn_per: number; point_value: number; min_redeem: number } | null;
 }>();
 
 const page = usePage<any>();
@@ -55,7 +57,9 @@ const panelOpen = ref(false);
 const search = ref('');
 const categoryId = ref<string | null>(null);
 const cart = ref<Line[]>([]);
-const customer = ref<{ id: string; name: string; phone: string | null } | null>(null);
+const customer = ref<{ id: string; name: string; phone: string | null; points?: number } | null>(null);
+const pointsUse = ref<number | null>(null);
+const dp = ref<number | null>(null);
 const discountType = ref<'rp' | 'percent'>('rp');
 const discountValue = ref<number | null>(null);
 
@@ -109,7 +113,23 @@ const discountApplied = computed(() => {
     const raw = discountType.value === 'percent' ? Math.round((subtotal.value * Math.min(v, 100)) / 100) : v;
     return Math.min(Math.max(raw, 0), subtotal.value);
 });
-const total = computed(() => subtotal.value - discountApplied.value);
+const maxPoints = computed(() => {
+    if (!props.loyalty || !customer.value) return 0;
+    const byBalance = customer.value.points ?? 0;
+    const byTotal = Math.floor((subtotal.value - discountApplied.value) / props.loyalty.point_value);
+    return Math.max(0, Math.min(byBalance, byTotal));
+});
+const pointsApplied = computed(() => {
+    const v = Math.floor(pointsUse.value || 0);
+    if (!props.loyalty || !customer.value || v < props.loyalty.min_redeem) return 0;
+    return Math.min(v, maxPoints.value);
+});
+const pointsDiscount = computed(() => pointsApplied.value * (props.loyalty?.point_value ?? 0));
+const total = computed(() => subtotal.value - discountApplied.value - pointsDiscount.value);
+
+watch(customer, () => {
+    pointsUse.value = null;
+});
 const itemCount = computed(() => cart.value.reduce((s, l) => s + l.qty, 0));
 
 const conv = (l: Line) => (l.unit_name ? (l.product.units.find((u) => u.name === l.unit_name)?.conversion ?? 1) : 1);
@@ -212,17 +232,22 @@ const onEnter = () => {
 };
 
 /* ---------- pembayaran ---------- */
-const currentMethod = computed(() => props.payment_methods.find((m) => m.key === method.value));
-const paid = computed(() => (method.value === 'cash' ? cashInput.value || 0 : total.value));
-const change = computed(() => paid.value - total.value);
-const canPay = computed(
-    () =>
-        total.value > 0 &&
-        !!method.value &&
-        paid.value >= total.value &&
-        !readOnly.value &&
-        (method.value !== 'transfer' || !!bankId.value),
+const methods = computed(() => [
+    ...props.payment_methods,
+    ...(props.can_credit && customer.value ? [{ key: 'credit', label: 'Bon' } as PayMethod] : []),
+]);
+const hasCash = computed(() => props.payment_methods.some((m) => m.key === 'cash'));
+const currentMethod = computed(() => methods.value.find((m) => m.key === method.value));
+const paid = computed(() =>
+    method.value === 'cash' ? cashInput.value || 0 : method.value === 'credit' ? dp.value || 0 : total.value,
 );
+const change = computed(() => (method.value === 'credit' ? 0 : paid.value - total.value));
+const dueNow = computed(() => (method.value === 'credit' ? Math.max(0, total.value - paid.value) : 0));
+const canPay = computed(() => {
+    if (total.value <= 0 || !method.value || readOnly.value) return false;
+    if (method.value === 'credit') return !!customer.value && paid.value < total.value;
+    return paid.value >= total.value && (method.value !== 'transfer' || !!bankId.value);
+});
 
 const DENOMS = [5000, 10000, 20000, 50000, 75000, 100000];
 const quick = computed(() => {
@@ -242,7 +267,8 @@ watch(method, (m) => {
 const openPay = () => {
     error.value = '';
     cashInput.value = null;
-    method.value = props.payment_methods[0]?.key ?? '';
+    method.value = methods.value[0]?.key ?? '';
+    dp.value = null;
     payOpen.value = true;
 };
 
@@ -280,13 +306,20 @@ const checkout = async () => {
                     unit_name: l.unit_name || null,
                     qty: l.qty,
                 })),
-                payments: [
-                    {
-                        method: method.value,
-                        amount: paid.value,
-                        bank_account_id: method.value === 'transfer' ? bankId.value : null,
-                    },
-                ],
+                payments:
+                    method.value === 'credit'
+                        ? paid.value > 0
+                            ? [{ method: 'cash', amount: paid.value, bank_account_id: null }]
+                            : []
+                        : [
+                            {
+                                method: method.value,
+                                amount: paid.value,
+                                bank_account_id: method.value === 'transfer' ? bankId.value : null,
+                            },
+                        ],
+                on_credit: method.value === 'credit',
+                points_use: pointsApplied.value,
             }),
         });
 
@@ -452,6 +485,24 @@ const closeReceipt = () => {
                     <div v-if="discountType === 'percent' && discountApplied" class="pos-between pos-xs pos-muted">
                         <span>Potongan</span><span>-{{ rupiah(discountApplied) }}</span>
                     </div>
+                    <div v-if="loyalty && customer" class="pos-between">
+                        <span class="pos-muted">Poin ({{ customer.points ?? 0 }})</span>
+                        <input
+                            v-model.number="pointsUse"
+                            type="number"
+                            min="0"
+                            :max="maxPoints"
+                            placeholder="0"
+                            :disabled="maxPoints < loyalty.min_redeem"
+                            class="pos-input pos-disc"
+                        />
+                    </div>
+                    <div v-if="pointsApplied" class="pos-between pos-xs pos-muted">
+                        <span>Tukar {{ pointsApplied }} poin</span><span>-{{ rupiah(pointsDiscount) }}</span>
+                    </div>
+                    <div v-else-if="loyalty && customer" class="pos-xs pos-muted">
+                        Minimal tukar {{ loyalty.min_redeem }} poin. 1 poin = {{ rupiah(loyalty.point_value) }}.
+                    </div>
                     <div class="pos-between pos-total"><span>Total</span><span>{{ rupiah(total) }}</span></div>
                     <button class="pos-primary" :disabled="!cart.length || readOnly || hasOver" @click="openPay">Bayar</button>
                 </div>
@@ -472,14 +523,14 @@ const closeReceipt = () => {
                     <div class="pos-big">{{ rupiah(total) }}</div>
                 </div>
 
-                <div v-if="!payment_methods.length" class="pos-notice">
+                <div v-if="!methods.length" class="pos-notice">
                     Belum ada metode pembayaran aktif.
                     <Link href="/payment-settings" class="pos-underline">Atur di menu Pembayaran</Link>
                 </div>
 
                 <template v-else>
                     <div class="pos-tabs">
-                        <button v-for="m in payment_methods" :key="m.key" class="pos-chip" :class="{ on: method === m.key }" @click="method = m.key">
+                        <button v-for="m in methods" :key="m.key" class="pos-chip" :class="{ on: method === m.key }" @click="method = m.key">
                             {{ m.label }}
                         </button>
                     </div>
@@ -520,6 +571,18 @@ const closeReceipt = () => {
                         <div class="pos-muted pos-center">Pastikan transfer {{ rupiah(total) }} sudah masuk.</div>
                     </div>
 
+                    <!-- Bon -->
+                    <div v-else-if="method === 'credit'" class="pos-stack">
+                        <div class="pos-notice">
+                            Pelanggan: <strong>{{ customer?.name }}</strong>. Sisa tagihan dicatat sebagai bon.
+                        </div>
+                        <MoneyInput v-if="hasCash" v-model="dp" placeholder="Uang muka tunai (opsional)" class="pos-input pos-lg" />
+                        <div class="pos-between pos-lg">
+                            <span class="pos-muted">Masuk bon</span>
+                            <span class="pos-bold pos-danger-text">{{ rupiah(dueNow) }}</span>
+                        </div>
+                    </div>
+
                     <!-- Debit -->
                     <div v-else class="pos-muted pos-center">
                         Proses {{ rupiah(total) }} di mesin EDC, lalu klik Selesaikan.
@@ -530,7 +593,7 @@ const closeReceipt = () => {
 
                 <div class="pos-row">
                     <button class="pos-primary pos-grow" :disabled="!canPay || processing" @click="checkout">
-                        {{ processing ? 'Menyimpan...' : 'Selesaikan' }}
+                        {{ processing ? 'Menyimpan...' : method === 'credit' ? 'Simpan sebagai Bon' : 'Selesaikan' }}
                     </button>
                     <button class="pos-btn pos-btn-lg" @click="payOpen = false">Batal</button>
                 </div>

@@ -37,7 +37,6 @@ class Shift extends Model
         return $this->hasMany(CashMovement::class);
     }
 
-    /** Ringkasan uang dan penjualan selama shift (dihitung dari transaksi). */
     public function summary(): array
     {
         $done = Order::where('shift_id', $this->id)->where('status', 'completed');
@@ -50,19 +49,22 @@ class Shift extends Model
             ->all();
 
         $change = (int) (clone $done)->sum('change_amount');
-        $cashSales = ($methods['cash'] ?? 0) - $change; // tunai diterima dikurangi kembalian
+        $cashSales = ($methods['cash'] ?? 0) - $change;
+        $debtCash = (int) ReceivablePayment::where('shift_id', $this->id)->where('method', 'cash')->sum('amount');
         $in = (int) $this->cashMovements()->where('type', 'in')->sum('amount');
         $out = (int) $this->cashMovements()->where('type', 'out')->sum('amount');
 
         return [
             'orders_count' => (clone $done)->count(),
             'sales_total' => (int) (clone $done)->sum('total'),
+            'credit_total' => (int) (clone $done)->sum('due_amount'),
             'voided_count' => Order::where('shift_id', $this->id)->where('status', 'void')->count(),
             'methods' => $methods,
             'cash_sales' => $cashSales,
+            'receivable_cash' => $debtCash,
             'cash_in' => $in,
             'cash_out' => $out,
-            'expected_cash' => $this->opening_cash + $cashSales + $in - $out,
+            'expected_cash' => $this->opening_cash + $cashSales + $debtCash + $in - $out,
         ];
     }
 

@@ -12,6 +12,7 @@ use App\Http\Controllers\PosDraftController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReceiptSettingController;
+use App\Http\Controllers\ReceivableController;
 use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\StockController;
 use App\Http\Controllers\SupplierController;
@@ -62,6 +63,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('pos/customers', [CustomerController::class, 'search']);
     Route::post('pos/customers', [CustomerController::class, 'quick']);
     Route::resource('customers', CustomerController::class)->only(['index', 'show', 'store', 'update', 'destroy']);
+
+    Route::post('customers/{id}/payments', [ReceivableController::class, 'store']);
+    Route::put('receipt-settings/loyalty', [ReceiptSettingController::class, 'loyalty']);
 });
 
 Route::middleware('auth')->group(function () {

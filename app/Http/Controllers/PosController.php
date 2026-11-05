@@ -3,12 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use App\Models\Customer;
 use App\Models\Order;
 use App\Models\PaymentSetting;
+use App\Models\PosDraft;
 use App\Models\Product;
 use App\Models\Shift;
+use App\Models\Stock;
+use App\Services\PointService;
 use App\Services\PricingService;
 use App\Services\StockService;
+use App\Support\ReceiptPayload;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,8 +21,6 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
-use App\Models\PosDraft;
-use App\Models\Customer;
 
 class PosController extends Controller
 {
@@ -35,7 +38,7 @@ class PosController extends Controller
 
         $trackStock = $business->canUse('stock_management');
         $stocks = ($shift && $trackStock)
-            ? \App\Models\Stock::where('outlet_id', $shift->outlet_id)->pluck('qty', 'product_id')
+            ? Stock::where('outlet_id', $shift->outlet_id)->pluck('qty', 'product_id')
             : collect();
 
         $products = Product::with(['units', 'priceTiers'])
@@ -73,6 +76,13 @@ class PosController extends Controller
             'shift' => $shift?->payload($business->timezone),
             'allow_negative_stock' => (bool) $business->allow_negative_stock,
             'can_customers' => $business->canUse('customers'),
+            'can_credit' => $business->canUse('receivable'),
+            'loyalty' => ($business->canUse('loyalty') && $business->loyalty_enabled) ? [
+                'enabled' => true,
+                'earn_per' => (int) $business->loyalty_earn_per,
+                'point_value' => (int) $business->loyalty_point_value,
+                'min_redeem' => (int) $business->loyalty_min_redeem,
+            ] : null,
             'drafts' => $shift
                 ? PosDraft::with('user:id,name')->where('outlet_id', $shift->outlet_id)->latest()->get()->map(fn($d) => [
                     'id' => $d->id,
@@ -87,7 +97,7 @@ class PosController extends Controller
         ]);
     }
 
-    public function store(Request $request, StockService $stock, PricingService $pricing)
+    public function store(Request $request, StockService $stock, PricingService $pricing, PointService $points)
     {
         $business = $request->attributes->get('business');
 
@@ -100,18 +110,20 @@ class PosController extends Controller
             'items.*.qty' => ['required', 'integer', 'min:1', 'max:100000'],
             'discount_type' => ['nullable', 'in:rp,percent'],
             'discount_value' => ['nullable', 'integer', 'min:0'],
-            'payments' => ['required', 'array', 'min:1', 'max:3'],
+            'payments' => ['present', 'array', 'max:3'],
             'payments.*.method' => ['required', 'string'],
             'payments.*.amount' => ['required', 'integer', 'min:0'],
             'payments.*.bank_account_id' => ['nullable', 'uuid'],
+            'on_credit' => ['nullable', 'boolean'],
+            'points_use' => ['nullable', 'integer', 'min:0'],
+            'customer_id' => ['nullable', 'uuid'],
             'note' => ['nullable', 'string', 'max:200'],
             'created_at_client' => ['nullable', 'date'],
-            'customer_id' => ['nullable', 'uuid'],
         ]);
 
         // Idempotensi: order yang sama dikirim ulang -> kembalikan yang sudah ada
         if ($existing = Order::with(['items', 'payments', 'outlet', 'cashier'])->find($data['id'])) {
-            return response()->json($this->payload($existing, $business));
+            return response()->json(ReceiptPayload::make($existing, $business));
         }
 
         $limit = $business->limit('max_orders_per_month');
@@ -135,6 +147,18 @@ class PosController extends Controller
             }
         }
 
+        $onCredit = (bool) ($data['on_credit'] ?? false);
+        if ($onCredit) {
+            if (! $business->canUse('receivable')) {
+                throw ValidationException::withMessages(['payments' => 'Fitur bon tersedia mulai paket Sultan.']);
+            }
+            if (! $customerId) {
+                throw ValidationException::withMessages(['payments' => 'Pilih pelanggan untuk transaksi bon.']);
+            }
+        } elseif (empty($data['payments'])) {
+            throw ValidationException::withMessages(['payments' => 'Pilih metode pembayaran.']);
+        }
+
         // Validasi metode pembayaran terhadap pengaturan bisnis
         $available = collect(PaymentSetting::current()->available())->keyBy('key');
         $payments = [];
@@ -156,13 +180,15 @@ class PosController extends Controller
         }
 
         try {
-            $order = DB::transaction(function () use ($data, $payments, $business, $stock, $pricing, $shift, $customerId) {
+            $order = DB::transaction(function () use ($data, $payments, $business, $stock, $pricing, $points, $shift, $customerId, $onCredit) {
                 $locked = Shift::whereKey($shift->id)->lockForUpdate()->first();
                 if (! $locked || $locked->status !== 'open') {
                     throw ValidationException::withMessages(['shift' => 'Kasir sudah ditutup.']);
                 }
+
                 $wholesale = $business->canUse('wholesale');
                 $trackStock = $business->canUse('stock_management');
+                $loyaltyOn = $customerId && $business->canUse('loyalty') && $business->loyalty_enabled;
 
                 $products = Product::with(['units', 'priceTiers'])
                     ->whereIn('id', collect($data['items'])->pluck('product_id')->unique())
@@ -204,32 +230,65 @@ class PosController extends Controller
                     ? intdiv($subtotal * min($dv, 100) + 50, 100)
                     : $dv;
                 $discount = min($discount, $subtotal);
-                $total = $subtotal - $discount;
+
+                $pointsUse = (int) ($data['points_use'] ?? 0);
+                $pointsDiscount = 0;
+                if ($pointsUse > 0) {
+                    if (! $loyaltyOn) {
+                        throw ValidationException::withMessages(['points' => 'Poin tidak bisa dipakai untuk transaksi ini.']);
+                    }
+                    if ($pointsUse < (int) $business->loyalty_min_redeem) {
+                        throw ValidationException::withMessages(['points' => "Minimal tukar {$business->loyalty_min_redeem} poin."]);
+                    }
+                    $pointsDiscount = $pointsUse * (int) $business->loyalty_point_value;
+                    if ($pointsDiscount > $subtotal - $discount) {
+                        throw ValidationException::withMessages(['points' => 'Poin melebihi total belanja.']);
+                    }
+                }
+
+                $total = $subtotal - $discount - $pointsDiscount;
                 $paid = (int) collect($payments)->sum('amount');
                 $cash = (int) collect($payments)->where('method', 'cash')->sum('amount');
-                $change = $paid - $total;
 
-                if ($paid < $total) {
-                    throw ValidationException::withMessages(['payments' => 'Pembayaran kurang dari total.']);
+                if ($onCredit) {
+                    if ($paid >= $total) {
+                        throw ValidationException::withMessages(['payments' => 'Uang muka sudah menutup total. Gunakan pembayaran biasa.']);
+                    }
+                    $due = $total - $paid;
+                    $change = 0;
+                } else {
+                    if ($paid < $total) {
+                        throw ValidationException::withMessages(['payments' => 'Pembayaran kurang dari total.']);
+                    }
+                    $due = 0;
+                    $change = $paid - $total;
+                    if ($change > $cash) {
+                        throw ValidationException::withMessages(['payments' => 'Kembalian hanya boleh dari pembayaran tunai.']);
+                    }
                 }
-                if ($change > $cash) {
-                    throw ValidationException::withMessages(['payments' => 'Kembalian hanya boleh dari pembayaran tunai.']);
-                }
+
+                $earned = ($loyaltyOn && (int) $business->loyalty_earn_per > 0)
+                    ? intdiv($total - $due, (int) $business->loyalty_earn_per)
+                    : 0;
 
                 $order = Order::create([
                     'id' => $data['id'],
                     'outlet_id' => $data['outlet_id'],
+                    'shift_id' => $shift->id,
+                    'customer_id' => $customerId,
                     'cashier_id' => auth()->id(),
                     'order_number' => 'INV-' . now()->format('ymd') . '-' . Str::upper(Str::random(5)),
                     'subtotal' => $subtotal,
                     'discount' => $discount,
+                    'points_used' => $pointsUse,
+                    'points_discount' => $pointsDiscount,
+                    'points_earned' => $earned,
                     'total' => $total,
                     'paid' => $paid,
                     'change_amount' => $change,
+                    'due_amount' => $due,
                     'note' => $data['note'] ?? null,
                     'created_at_client' => $data['created_at_client'] ?? null,
-                    'shift_id' => $shift->id,
-                    'customer_id' => $customerId,
                 ]);
 
                 foreach ($lines as $l) {
@@ -244,17 +303,19 @@ class PosController extends Controller
                     $stock->move($data['outlet_id'], $products[$productId], 'sale', -$baseQty, 'Penjualan ' . $order->order_number, 'order', $order->id, (bool) $business->allow_negative_stock);
                 }
 
-                return $order->load(['items', 'payments', 'outlet', 'cashier']);
+                if ($pointsUse > 0) {
+                    $points->adjust($customerId, -$pointsUse, 'redeem', $order->id, 'Tukar poin ' . $order->order_number, false);
+                }
+                if ($earned > 0) {
+                    $points->adjust($customerId, $earned, 'earn', $order->id, 'Belanja ' . $order->order_number);
+                }
+
+                return $order->load(['items', 'payments', 'outlet', 'cashier', 'customer']);
             });
         } catch (UniqueConstraintViolationException) {
             $order = Order::with(['items', 'payments', 'outlet', 'cashier'])->findOrFail($data['id']);
         }
 
-        return response()->json($this->payload($order, $business));
-    }
-
-    private function payload(Order $o, $business): array
-    {
-        return \App\Support\ReceiptPayload::make($o, $business);
+        return response()->json(ReceiptPayload::make($order, $business));
     }
 }

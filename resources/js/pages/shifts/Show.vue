@@ -31,6 +31,7 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
             <h2 class="mb-1 font-semibold">Uang di laci</h2>
             <div class="flex justify-between"><span>Modal awal</span><span>{{ rupiah(shift.opening_cash) }}</span></div>
             <div class="flex justify-between"><span>Penjualan tunai</span><span>{{ rupiah(shift.cash_sales) }}</span></div>
+            <div v-if="shift.receivable_cash" class="flex justify-between"><span>Pelunasan bon (tunai)</span><span>+{{ rupiah(shift.receivable_cash) }}</span></div>
             <div class="flex justify-between"><span>Kas masuk</span><span>+{{ rupiah(shift.cash_in) }}</span></div>
             <div class="flex justify-between"><span>Kas keluar</span><span>-{{ rupiah(shift.cash_out) }}</span></div>
             <div class="flex justify-between border-t border-dashed pt-2 font-bold"><span>Seharusnya</span><span>{{ rupiah(shift.expected_cash) }}</span></div>
@@ -49,6 +50,7 @@ const methodLabel: Record<string, string> = { cash: 'Tunai', qris: 'QRIS', debit
             <div class="flex justify-between"><span>Transaksi selesai</span><span>{{ shift.orders_count }}</span></div>
             <div class="flex justify-between"><span>Dibatalkan</span><span>{{ shift.voided_count }}</span></div>
             <div class="flex justify-between font-bold"><span>Total penjualan</span><span>{{ rupiah(shift.sales_total) }}</span></div>
+            <div v-if="shift.credit_total" class="flex justify-between text-neutral-500"><span>· Dari bon (belum dibayar)</span><span>{{ rupiah(shift.credit_total) }}</span></div>
             <div v-for="(v, k) in shift.methods" :key="k" class="flex justify-between text-neutral-500">
                 <span>· {{ methodLabel[k as string] ?? k }}</span><span>{{ rupiah(v as number) }}</span>
             </div>

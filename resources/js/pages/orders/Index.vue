@@ -141,7 +141,11 @@ const field =
                         <th class="px-4 py-3">Kasir</th>
                         <th class="px-4 py-3">Bayar</th>
                         <th class="px-4 py-3 text-right">Total</th>
-                        <th class="px-4 py-3">Status</th>
+                        <td class="px-4 py-3">
+                            <span :class="o.status === 'void' ? 'text-red-500' : 'text-green-600'">{{ o.status === 'void' ? 'Dibatalkan' : 'Selesai' }}</span>
+                            <p v-if="o.status === 'void' && o.void_reason" class="max-w-48 truncate text-xs text-neutral-500" :title="o.void_reason">Alasan: {{ o.void_reason }}</p>
+                            <p v-if="o.due > 0 && o.status !== 'void'" class="text-xs font-medium text-red-500">Bon {{ rupiah(o.due) }}</p>
+                        </td>
                         <th class="px-4 py-3"></th>
                     </tr>
                 </thead>
