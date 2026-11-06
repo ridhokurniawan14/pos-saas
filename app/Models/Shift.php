@@ -40,7 +40,7 @@ class Shift extends Model
     public function summary(): array
     {
         $done = Order::where('shift_id', $this->id)->where('status', 'completed');
-
+        $debtCash = (int) ReceivablePayment::where('shift_id', $this->id)->where('method', 'cash')->whereNull('reversed_at')->sum('amount');
         $methods = OrderPayment::whereIn('order_id', (clone $done)->select('id'))
             ->selectRaw('method, SUM(amount) as total')
             ->groupBy('method')

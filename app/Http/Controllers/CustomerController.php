@@ -28,7 +28,7 @@ class CustomerController extends Controller
             ->withCount(['orders as orders_count' => $done])
             ->withSum(['orders as total_spent' => $done], 'total')
             ->withSum(['orders as due_total' => $done], 'due_amount')
-            ->withSum('receivablePayments as repaid', 'amount')
+            ->withSum(['receivablePayments as repaid' => fn($q) => $q->whereNull('reversed_at')], 'amount')
             ->when($request->search, fn($q, $s) => $q->where(fn($q) => $q
                 ->where('name', 'ilike', "%{$s}%")
                 ->orWhere('phone', 'ilike', "%{$s}%")))
@@ -79,7 +79,10 @@ class CustomerController extends Controller
         $payments = collect();
         if ($canReceivable) {
             $repaid = ReceivablePayment::where('customer_id', $c->id)
-                ->selectRaw('order_id, SUM(amount) as s')->groupBy('order_id')->pluck('s', 'order_id');
+                ->whereNull('reversed_at')
+                ->selectRaw('order_id, SUM(amount) as s')
+                ->groupBy('order_id')
+                ->pluck('s', 'order_id');
 
             $unpaid = Order::where('customer_id', $c->id)->where('status', 'completed')->where('due_amount', '>', 0)
                 ->orderBy('created_at')->get(['id', 'order_number', 'total', 'due_amount', 'created_at'])
@@ -92,6 +95,7 @@ class CustomerController extends Controller
                 ])->filter(fn($o) => $o['remaining'] > 0)->values();
 
             $payments = ReceivablePayment::where('customer_id', $c->id)
+                ->whereNull('reversed_at')
                 ->selectRaw('batch_id, MAX(method) as method, SUM(amount) as total, MAX(created_at) as at, MAX(note) as note')
                 ->groupBy('batch_id')->orderByDesc('at')->limit(20)->get()
                 ->map(fn($p) => [

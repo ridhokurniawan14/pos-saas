@@ -26,6 +26,7 @@ class ReceivableService
                 ->get();
 
             $repaid = ReceivablePayment::where('customer_id', $customer->id)
+                ->whereNull('reversed_at')
                 ->selectRaw('order_id, SUM(amount) as s')
                 ->groupBy('order_id')
                 ->pluck('s', 'order_id');

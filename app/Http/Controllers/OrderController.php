@@ -71,9 +71,12 @@ class OrderController extends Controller
 
         abort_unless($manager || $order->cashier_id === $request->user()->id, 403, 'Kamu tidak punya akses ke transaksi ini.');
 
+        $cicilan = (int) ReceivablePayment::where('order_id', $order->id)->whereNull('reversed_at')->sum('amount');
+
         return response()->json([
             ...ReceiptPayload::make($order, $business),
             'can_void' => $manager && $order->status === 'completed',
+            'refund_total' => $order->status === 'completed' ? max(0, $order->paid - $order->change_amount) + $cicilan : 0,
         ]);
     }
 
@@ -90,9 +93,9 @@ class OrderController extends Controller
                 throw ValidationException::withMessages(['void' => 'Transaksi ini sudah dibatalkan.']);
             }
 
-            if (ReceivablePayment::where('order_id', $order->id)->exists()) {
-                throw ValidationException::withMessages(['void' => 'Transaksi bon ini sudah ada pembayaran cicilan, tidak bisa dibatalkan.']);
-            }
+            ReceivablePayment::where('order_id', $order->id)
+                ->whereNull('reversed_at')
+                ->update(['reversed_at' => now(), 'reversed_by' => auth()->id()]);
 
             $order->update([
                 'status' => 'void',

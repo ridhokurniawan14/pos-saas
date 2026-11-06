@@ -141,11 +141,7 @@ const field =
                         <th class="px-4 py-3">Kasir</th>
                         <th class="px-4 py-3">Bayar</th>
                         <th class="px-4 py-3 text-right">Total</th>
-                        <td class="px-4 py-3">
-                            <span :class="o.status === 'void' ? 'text-red-500' : 'text-green-600'">{{ o.status === 'void' ? 'Dibatalkan' : 'Selesai' }}</span>
-                            <p v-if="o.status === 'void' && o.void_reason" class="max-w-48 truncate text-xs text-neutral-500" :title="o.void_reason">Alasan: {{ o.void_reason }}</p>
-                            <p v-if="o.due > 0 && o.status !== 'void'" class="text-xs font-medium text-red-500">Bon {{ rupiah(o.due) }}</p>
-                        </td>
+                        <th class="px-4 py-3">Status</th>
                         <th class="px-4 py-3"></th>
                     </tr>
                 </thead>
@@ -160,6 +156,8 @@ const field =
                         <td class="px-4 py-3 text-right font-medium" :class="o.status === 'void' ? 'text-neutral-400 line-through' : ''">{{ rupiah(o.total) }}</td>
                         <td class="px-4 py-3">
                             <span :class="o.status === 'void' ? 'text-red-500' : 'text-green-600'">{{ o.status === 'void' ? 'Dibatalkan' : 'Selesai' }}</span>
+                            <p v-if="o.status === 'void' && o.void_reason" class="max-w-48 truncate text-xs text-neutral-500" :title="o.void_reason">Alasan: {{ o.void_reason }}</p>
+                            <p v-if="o.due > 0 && o.status !== 'void'" class="text-xs font-medium text-red-500">Bon {{ rupiah(o.due) }}</p>
                         </td>
                         <td class="px-4 py-3 text-right">
                             <button class="text-sm font-medium" @click="open(o.id)">Lihat</button>
@@ -191,6 +189,10 @@ const field =
                 <h3 style="margin: 0; font-size: 17px; font-weight: 600">Batalkan transaksi ini?</h3>
                 <p style="margin: 6px 0 12px; font-size: 14px; color: #71717a">
                     {{ detail?.order.number }}. Stok barang akan dikembalikan. Tindakan ini tidak bisa dibatalkan.
+                </p>
+                <p v-if="detail?.refund_total" style="margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: #fef3c7; color: #92400e; font-size: 13px">
+                    Uang yang perlu dikembalikan ke pelanggan: <strong>{{ rupiah(detail.refund_total) }}</strong>.
+                    Jika shift asalnya sudah ditutup, catat pengembaliannya lewat Kas keluar di shift yang berjalan.
                 </p>
                 <textarea v-model="reason" rows="3" maxlength="200" placeholder="Alasan pembatalan (wajib)"
                     style="width: 100%; padding: 10px; border: 1px solid #d4d4d8; border-radius: 10px; font-size: 14px; background: #fff; color: #111"></textarea>

@@ -4,6 +4,8 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentSettingController;
@@ -13,6 +15,7 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\ReceiptSettingController;
 use App\Http\Controllers\ReceivableController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\StockController;
 use App\Http\Controllers\SupplierController;
@@ -20,7 +23,13 @@ use App\Http\Controllers\SupplierController;
 Route::inertia('/', 'Welcome')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::inertia('dashboard', 'Dashboard')->name('dashboard');
+
+    Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
+    Route::get('reports/export', [ReportController::class, 'export'])->name('reports.export');
+    Route::get('expenses', [ExpenseController::class, 'index'])->name('expenses.index');
+    Route::post('expenses', [ExpenseController::class, 'store'])->name('expenses.store');
+    Route::delete('expenses/{id}', [ExpenseController::class, 'destroy'])->name('expenses.destroy');
 
     Route::resource('products', ProductController::class)->except('show');
     Route::resource('categories', CategoryController::class)->only(['index', 'store', 'update', 'destroy']);

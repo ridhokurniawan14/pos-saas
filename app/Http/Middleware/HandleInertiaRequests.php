@@ -61,6 +61,7 @@ class HandleInertiaRequests extends Middleware
                     'days_left' => $b->daysLeft(),
                     'ends_at' => $b->subscription?->ends_at?->toDateString(),
                     'read_only' => $b->isReadOnly(),
+                    'role' => $request->user() ? $b->roleOf($request->user()) : null,
                     'features' => $plan?->features->where('enabled', true)->pluck('feature_key')->values(),
                     'limits' => $plan?->limits->pluck('value', 'key'),
                 ];

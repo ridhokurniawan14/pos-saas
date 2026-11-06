@@ -130,6 +130,12 @@ const total = computed(() => subtotal.value - discountApplied.value - pointsDisc
 watch(customer, () => {
     pointsUse.value = null;
 });
+watch([pointsUse, maxPoints], ([v, max]) => {
+    if (v === null || v === undefined) return;
+    const n = Math.floor(Number(v) || 0);
+    if (n > max) pointsUse.value = max;
+    else if (n < 0) pointsUse.value = 0;
+});
 const itemCount = computed(() => cart.value.reduce((s, l) => s + l.qty, 0));
 
 const conv = (l: Line) => (l.unit_name ? (l.product.units.find((u) => u.name === l.unit_name)?.conversion ?? 1) : 1);
@@ -501,7 +507,7 @@ const closeReceipt = () => {
                         <span>Tukar {{ pointsApplied }} poin</span><span>-{{ rupiah(pointsDiscount) }}</span>
                     </div>
                     <div v-else-if="loyalty && customer" class="pos-xs pos-muted">
-                        Minimal tukar {{ loyalty.min_redeem }} poin. 1 poin = {{ rupiah(loyalty.point_value) }}.
+                        Maksimal {{ maxPoints }} poin. Minimal tukar {{ loyalty.min_redeem }} poin. 1 poin = {{ rupiah(loyalty.point_value) }}.
                     </div>
                     <div class="pos-between pos-total"><span>Total</span><span>{{ rupiah(total) }}</span></div>
                     <button class="pos-primary" :disabled="!cart.length || readOnly || hasOver" @click="openPay">Bayar</button>
