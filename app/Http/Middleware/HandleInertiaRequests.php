@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Inertia\Inertia;
+use App\Support\Access;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -61,7 +62,8 @@ class HandleInertiaRequests extends Middleware
                     'days_left' => $b->daysLeft(),
                     'ends_at' => $b->subscription?->ends_at?->toDateString(),
                     'read_only' => $b->isReadOnly(),
-                    'role' => $request->user() ? $b->roleOf($request->user()) : null,
+                    'role' => $b->pivot?->role,
+                    'permissions' => Access::areas($b->pivot?->role),
                     'features' => $plan?->features->where('enabled', true)->pluck('feature_key')->values(),
                     'limits' => $plan?->limits->pluck('value', 'key'),
                 ];

@@ -4,6 +4,8 @@ import { Head, Link, usePage } from '@inertiajs/vue3';
 import { Lock } from '@lucide/vue';
 import { computed } from 'vue';
 
+const canPos = computed(() => (page.props.business?.permissions ?? []).includes('pos'));
+
 defineOptions({ layout: { breadcrumbs: [{ title: 'Dashboard', href: '/dashboard' }] } });
 
 const props = defineProps<{
@@ -38,7 +40,7 @@ const delta = computed(() =>
                 <h1 class="text-xl font-semibold">Dashboard</h1>
                 <p class="text-sm text-neutral-500">Ringkasan penjualan hari ini.</p>
             </div>
-            <Link href="/pos" class="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black">Buka Kasir</Link>
+            <Link href="/pos" v-if="canPos" class="rounded-lg bg-black px-5 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black">Buka Kasir</Link>
         </div>
 
         <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">

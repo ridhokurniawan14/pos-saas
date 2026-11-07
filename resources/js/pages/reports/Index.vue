@@ -13,6 +13,7 @@ const props = defineProps<{
     filters: { from: string; to: string; outlet: string | null };
     outlets: { id: string; name: string }[];
     advanced: boolean;
+    capped: boolean;
 }>();
 
 const page = usePage<any>();
@@ -39,6 +40,16 @@ watch([from, to, outlet], () => {
     );
 });
 onBeforeUnmount(() => clearTimeout(timer));
+
+watch(
+    () => props.filters,
+    (f) => {
+        if (props.capped) {
+            from.value = f.from;
+            to.value = f.to;
+        }
+    },
+);
 
 const iso = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const preset = (p: 'today' | '7' | 'month' | 'last') => {
@@ -101,6 +112,10 @@ const chip = 'rounded-full border px-3 py-1 text-sm hover:bg-neutral-100 dark:bo
             <button :class="chip" @click="preset('month')">Bulan ini</button>
             <button :class="chip" @click="preset('last')">Bulan lalu</button>
         </div>
+
+        <p v-if="capped" class="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400 no-print">
+            Rentang laporan maksimal 1 tahun (366 hari). Tanggal awal disesuaikan menjadi {{ fmtDate(filters.from) }}.
+        </p>
 
         <div id="report-print" class="space-y-5">
             <div class="print-only">

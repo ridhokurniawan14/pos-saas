@@ -11,6 +11,8 @@ class OnboardingController extends Controller
     {
         $business = $request->attributes->get('business');
 
+        abort_unless($business->pivot?->role === 'owner', 403, 'Hanya pemilik toko yang boleh mengatur toko.');
+
         if ($business->onboarded_at) {
             return redirect('/dashboard');
         }
@@ -26,6 +28,9 @@ class OnboardingController extends Controller
         ]);
 
         $business = $request->attributes->get('business');
+
+        abort_unless($business->pivot?->role === 'owner', 403, 'Hanya pemilik toko yang boleh mengatur toko.');
+
 
         $business->update([
             'name' => $data['business_name'],

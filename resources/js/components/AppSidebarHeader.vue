@@ -2,6 +2,7 @@
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import StockBell from '@/components/StockBell.vue';
+import BusinessSwitcher from '@/components/BusinessSwitcher.vue';
 import type { BreadcrumbItem } from '@/types';
 
 withDefaults(
@@ -24,6 +25,9 @@ withDefaults(
                 <Breadcrumbs :breadcrumbs="breadcrumbs" />
             </template>
         </div>
-    <StockBell class="ml-auto" />
+    <div class="ml-auto flex items-center gap-2">
+        <BusinessSwitcher />
+        <StockBell />
+    </div>
     </header>
 </template>

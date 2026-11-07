@@ -17,7 +17,8 @@ import {
     Truck,
     Users,
     Banknote,
-    TrendingUp
+    TrendingUp,
+    ShieldCheck
 } from '@lucide/vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
@@ -35,31 +36,32 @@ import {
 import { dashboard } from '@/routes';
 import type { NavItem } from '@/types';
 
-type MenuItem = NavItem & { feature?: string; locked?: boolean; managerOnly?: boolean };
+type MenuItem = NavItem & { feature?: string; locked?: boolean; area?: string };
 
 const allNavItems: MenuItem[] = [
     { title: 'Dashboard', href: dashboard(), icon: LayoutGrid },
-    { title: 'Kasir', href: '/pos', icon: ShoppingCart },
-    { title: 'Riwayat', href: '/orders', icon: Receipt },
-    { title: 'Shift', href: '/shifts', icon: Wallet },
-    { title: 'Produk', href: '/products', icon: Package },
-    { title: 'Kategori', href: '/categories', icon: Tags },
-    { title: 'Stok', href: '/stock', icon: Boxes, feature: 'stock_management' },
-    { title: 'Supplier', href: '/suppliers', icon: Truck, feature: 'stock_management' },
-    { title: 'Pembelian', href: '/purchases', icon: PackagePlus, feature: 'stock_management' },
-    { title: 'Pelanggan', href: '/customers', icon: Users, feature: 'customers' },
-    { title: 'Laporan', href: '/reports', icon: TrendingUp, managerOnly: true },
-    { title: 'Pengeluaran', href: '/expenses', icon: Banknote, feature: 'advanced_report', managerOnly: true },
-    { title: 'Pembayaran', href: '/payment-settings', icon: CreditCard },
-    { title: 'Pengaturan Toko', href: '/receipt-settings', icon: Store },
+    { title: 'Kasir', href: '/pos', icon: ShoppingCart, area: 'pos' },
+    { title: 'Riwayat', href: '/orders', icon: Receipt, area: 'orders' },
+    { title: 'Shift', href: '/shifts', icon: Wallet, area: 'shifts' },
+    { title: 'Produk', href: '/products', icon: Package, area: 'products' },
+    { title: 'Kategori', href: '/categories', icon: Tags, area: 'categories' },
+    { title: 'Stok', href: '/stock', icon: Boxes, area: 'stock', feature: 'stock_management' },
+    { title: 'Supplier', href: '/suppliers', icon: Truck, area: 'suppliers', feature: 'stock_management' },
+    { title: 'Pembelian', href: '/purchases', icon: PackagePlus, area: 'purchases', feature: 'stock_management' },
+    { title: 'Pelanggan', href: '/customers', icon: Users, area: 'customers', feature: 'customers' },
+    { title: 'Laporan', href: '/reports', icon: TrendingUp, area: 'reports' },
+    { title: 'Pengeluaran', href: '/expenses', icon: Banknote, area: 'expenses', feature: 'advanced_report' },
+    { title: 'Pembayaran', href: '/payment-settings', icon: CreditCard, area: 'payments' },
+    { title: 'Pengaturan Toko', href: '/receipt-settings', icon: Store, area: 'settings' },
+    { title: 'Pengguna', href: '/users', icon: ShieldCheck, area: 'users' },
 ];
 
 const page = usePage<any>();
 const features = computed<string[]>(() => page.props.business?.features ?? []);
-const isManager = computed(() => ['owner', 'admin'].includes(page.props.business?.role));
+const permissions = computed<string[]>(() => page.props.business?.permissions ?? []);
 const mainNavItems = computed(() =>
     allNavItems
-        .filter((i) => !i.managerOnly || isManager.value)
+        .filter((i) => !i.area || permissions.value.includes(i.area))
         .map((i) => ({ ...i, locked: !!i.feature && !features.value.includes(i.feature) })),
 );
 

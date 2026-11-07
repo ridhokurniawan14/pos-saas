@@ -25,7 +25,17 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
 
+        \Illuminate\Support\Facades\Event::listen(
+            [\Illuminate\Auth\Events\Login::class, \Illuminate\Auth\Events\Verified::class],
+            \App\Listeners\AcceptInvitations::class,
+        );
+
         \App\Models\User::created(function (\App\Models\User $user) {
+            // Orang yang diundang bergabung ke toko yang mengundang, bukan membuat toko trial baru
+            if (\App\Models\Invitation::pendingEmail($user->email)->exists()) {
+                return;
+            }
+
             app(\App\Actions\StartTrial::class)->handle($user);
         });
     }
